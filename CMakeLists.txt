@@ -1,15 +1,21 @@
 cmake_minimum_required(VERSION 3.22)
 
-# Static MSVC runtime -> the .dll runs on any Windows PC without the VC++ redistributable
+# Static MSVC runtime -> the plugin runs on any Windows PC without the VC++ redistributable
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "" FORCE)
+# Universal binary (Apple Silicon + Intel) on macOS
+set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
+set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 
-project(DnBMixDoctor VERSION 0.1.0 LANGUAGES C CXX)
+project(DnBMixDoctor VERSION 1.0.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# JUCE: use ./JUCE if present, otherwise download the pinned release
+# ---- JUCE: ./JUCE if present, -DJUCE_DIR=<path> if given, otherwise download the pinned release
+set(JUCE_DIR "" CACHE PATH "Path to a local JUCE checkout (optional)")
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/JUCE/CMakeLists.txt")
     add_subdirectory(JUCE)
+elseif(JUCE_DIR AND EXISTS "${JUCE_DIR}/CMakeLists.txt")
+    add_subdirectory("${JUCE_DIR}" "${CMAKE_BINARY_DIR}/JUCE")
 else()
     include(FetchContent)
     FetchContent_Declare(JUCE
@@ -19,25 +25,57 @@ else()
     FetchContent_MakeAvailable(JUCE)
 endif()
 
+set(MCDSP_FORMATS VST3 Standalone)
+if(APPLE)
+    list(APPEND MCDSP_FORMATS AU)
+endif()
+
 juce_add_plugin(DnBMixDoctor
-    COMPANY_NAME               "MixDoctor"
+    COMPANY_NAME               "Mod Con DSP"
+    COMPANY_WEBSITE            ""
     PRODUCT_NAME               "DnB Mix Doctor"
-    PLUGIN_MANUFACTURER_CODE   MxDr
-    PLUGIN_CODE                DnBM
-    FORMATS                    VST3
-    VST3_CATEGORIES            Fx Analyzer
+    VERSION                    1.0.0
+    PLUGIN_MANUFACTURER_CODE   MCDS
+    PLUGIN_CODE                DnMD
+    FORMATS                    ${MCDSP_FORMATS}
+    VST3_CATEGORIES            Fx Mastering Dynamics
+    AU_MAIN_TYPE               kAudioUnitType_Effect
+    BUNDLE_ID                  com.modcondsp.dnbmixdoctor
     IS_SYNTH                   FALSE
     NEEDS_MIDI_INPUT           FALSE
     NEEDS_MIDI_OUTPUT          FALSE
     IS_MIDI_EFFECT             FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD    FALSE)
 
 target_sources(DnBMixDoctor PRIVATE
-    Source/MixDoctorDSP.h
-    Source/PluginProcessor.cpp  Source/PluginProcessor.h
-    Source/PluginEditor.cpp     Source/PluginEditor.h)
+    Source/Params.h
+    Source/PluginProcessor.cpp      Source/PluginProcessor.h
+    Source/PluginEditor.cpp         Source/PluginEditor.h
+    Source/PresetManager.cpp        Source/PresetManager.h
+    Source/dsp/DspUtils.h
+    Source/dsp/LoudnessMeter.h
+    Source/dsp/TruePeakLimiter.h
+    Source/dsp/MixEngine.cpp        Source/dsp/MixEngine.h
+    Source/analysis/VisualFifo.h
+    Source/analysis/AutoFix.cpp     Source/analysis/AutoFix.h
+    Source/ui/HiFiLookAndFeel.cpp   Source/ui/HiFiLookAndFeel.h
+    Source/ui/Widgets.h
+    Source/ui/VUMeter.h
+    Source/ui/Visualizer.cpp        Source/ui/Visualizer.h)
 
 target_include_directories(DnBMixDoctor PRIVATE Source)
+
+# ---- Optional embedded 70s font: drop Michroma-Regular.ttf (SIL OFL, Google Fonts) into Resources/Fonts
+set(MCDSP_FONT "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Fonts/Michroma-Regular.ttf")
+if(EXISTS "${MCDSP_FONT}")
+    juce_add_binary_data(DnBMixDoctorData SOURCES "${MCDSP_FONT}")
+    target_link_libraries(DnBMixDoctor PRIVATE DnBMixDoctorData)
+    target_compile_definitions(DnBMixDoctor PRIVATE MCDSP_HAS_EMBEDDED_FONT=1)
+    message(STATUS "DnB Mix Doctor: embedding Michroma font")
+else()
+    message(STATUS "DnB Mix Doctor: Michroma font not found, using system fallback (Eurostile/Bahnschrift/...)")
+endif()
 
 target_compile_definitions(DnBMixDoctor PUBLIC
     JUCE_WEB_BROWSER=0
@@ -48,11 +86,34 @@ target_compile_definitions(DnBMixDoctor PUBLIC
 target_link_libraries(DnBMixDoctor
     PRIVATE
         juce::juce_audio_utils
+        juce::juce_dsp
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
 
-# Native DSP test-bench (no JUCE needed):  cmake --build . --target dsp_tests && ctest
-add_executable(dsp_tests EXCLUDE_FROM_ALL tests/test_dsp.cpp)
-target_include_directories(dsp_tests PRIVATE Source)
+# ---- Offline DSP tests (no host needed):  cmake --build build --target DnBMixDoctorTests
+juce_add_console_app(DnBMixDoctorTests PRODUCT_NAME "DnBMixDoctorTests")
+target_sources(DnBMixDoctorTests PRIVATE tests/EngineTests.cpp Source/dsp/MixEngine.cpp)
+target_include_directories(DnBMixDoctorTests PRIVATE Source)
+target_compile_definitions(DnBMixDoctorTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(DnBMixDoctorTests PRIVATE juce::juce_dsp juce::juce_audio_basics
+                      PUBLIC juce::juce_recommended_config_flags)
+set_target_properties(DnBMixDoctorTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
+# ---- Renders the editor to PNG with audio flowing (UI review without a DAW)
+juce_add_console_app(DnBMixDoctorSnapshot PRODUCT_NAME "DnBMixDoctorSnapshot")
+get_target_property(MCDSP_PLUGIN_SOURCES DnBMixDoctor SOURCES)
+list(FILTER MCDSP_PLUGIN_SOURCES INCLUDE REGEX "\\.cpp$")
+list(FILTER MCDSP_PLUGIN_SOURCES INCLUDE REGEX "^Source/")
+target_sources(DnBMixDoctorSnapshot PRIVATE tests/UISnapshot.cpp ${MCDSP_PLUGIN_SOURCES})
+target_include_directories(DnBMixDoctorSnapshot PRIVATE Source)
+target_compile_definitions(DnBMixDoctorSnapshot PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
+                           JucePlugin_Name="DnB Mix Doctor")
+target_link_libraries(DnBMixDoctorSnapshot PRIVATE juce::juce_audio_utils juce::juce_dsp
+                      PUBLIC juce::juce_recommended_config_flags)
+if(EXISTS "${MCDSP_FONT}")
+    target_link_libraries(DnBMixDoctorSnapshot PRIVATE DnBMixDoctorData)
+    target_compile_definitions(DnBMixDoctorSnapshot PRIVATE MCDSP_HAS_EMBEDDED_FONT=1)
+endif()
+set_target_properties(DnBMixDoctorSnapshot PROPERTIES EXCLUDE_FROM_ALL TRUE)

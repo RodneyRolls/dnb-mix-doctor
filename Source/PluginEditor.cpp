@@ -1,219 +1,493 @@
 #include "PluginEditor.h"
 
 using namespace juce;
+namespace col = hifi::colours;
+
 namespace
 {
-const Colour kBg    { 0xff0e1116 }, kPanel { 0xff161b22 }, kText { 0xffe8ecf1 }, kDim { 0xff8b95a5 },
-             kAccent { 0xff19e3b1 }, kOk { 0xff3ddc84 }, kWarn { 0xffffb020 }, kBad { 0xffff4d5e };
+    // ---- design-space layout (1300 x 700)
+    constexpr int cheek = 26;
+    const Rectangle<int> plateArea { cheek, 0, DnBMixDoctorEditor::designW - 2 * cheek, DnBMixDoctorEditor::designH };
+    const Rectangle<int> visArea { 236, 100, 828, 272 };
+    constexpr int knobsX = 40, knobsW = 1220, rowY[2] = { 382, 530 }, rowH = 146;
+    constexpr int favouriteIdOffset = 1000;
+
+    float easeInOut (float t) { return t < 0.5f ? 4.0f * t * t * t : 1.0f - std::pow (-2.0f * t + 2.0f, 3.0f) * 0.5f; }
+
+    String fmtMeter (float v, int decimals = 1) { return v <= -99.0f ? String ("---") : String (v, decimals); }
 }
 
-MixDoctorEditor::MixDoctorEditor (MixDoctorProcessor& p) : AudioProcessorEditor (&p), proc (p)
+//==============================================================================
+DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
+    : AudioProcessorEditor (p), proc (p)
 {
-    setSize (900, 600);
+    setLookAndFeel (&lnf);
+    addAndMakeVisible (panel);
 
-    styleToggle (cleanB, "Clean low-end  (DC + sub-25 Hz)");
-    styleToggle (monoB,  "Mono low-end  below");
-    styleToggle (toneB,  "Auto tone  -");
-    styleToggle (harshB, "Harshness tamer  -");
-    styleToggle (limB,   "True-peak limiter");
+    for (auto* b : { &powerButton, &autoFixButton, &prevButton, &nextButton, &starButton, &menuButton,
+                     &folderButton, &abButton, &releaseAutoButton })
+        panel.addAndMakeVisible (b);
+    for (auto* c : std::initializer_list<Component*> { &presetBox, &cpuDisplay, &visualizer, &vuLeft, &vuRight,
+                                                        &lufsIntDisplay, &lufsShortDisplay, &truePeakDisplay, &grDisplay })
+        panel.addAndMakeVisible (c);
 
-    styleSlider (monoFreqS, " Hz");  styleSlider (monoAmtS, " %");  styleSlider (toneAmtS, " %");
-    styleSlider (toneMaxS, " dB");   styleSlider (harshMaxS, " dB"); styleSlider (ceilS, " dBTP");
+    abButton.setText ("A");
+    releaseAutoButton.setText ("AUTO");
+    releaseAutoButton.setClickingTogglesState (true);
 
-    auto cap = [this] (Label& l, const String& t) { l.setText (t, dontSendNotification); l.setColour (Label::textColourId, kDim); l.setFont (FontOptions (12.f)); addAndMakeVisible (l); };
-    cap (monoFreqL, "freq"); cap (monoAmtL, "amount"); cap (toneAmtL, "amount"); cap (toneMaxL, "max"); cap (harshMaxL, "max cut"); cap (ceilL, "ceiling");
-
-    styleBox.addItemList (StringArray { "Neurofunk", "Liquid", "Dancefloor", "Captured" }, 1);
-    addAndMakeVisible (styleBox);
-    captureBtn.setTooltip ("Play a reference track you love for a few seconds, then click: its tonal balance becomes the target.");
-    captureBtn.onClick = [this] { proc.captureTarget(); };
-    addAndMakeVisible (captureBtn);
-
-    auto& s = proc.apvts;
-    cleanA = std::make_unique<BA> (s, "cleanLow", cleanB);  monoA = std::make_unique<BA> (s, "monoLow", monoB);
-    toneA  = std::make_unique<BA> (s, "autoTone", toneB);   harshA = std::make_unique<BA> (s, "harsh", harshB);
-    limA   = std::make_unique<BA> (s, "limiter", limB);
-    monoFreqA = std::make_unique<SA> (s, "monoFreq", monoFreqS); monoAmtA = std::make_unique<SA> (s, "monoAmt", monoAmtS);
-    toneAmtA  = std::make_unique<SA> (s, "toneAmt", toneAmtS);   toneMaxA = std::make_unique<SA> (s, "toneMax", toneMaxS);
-    harshMaxA = std::make_unique<SA> (s, "harshMax", harshMaxS); ceilA = std::make_unique<SA> (s, "ceiling", ceilS);
-    styleA = std::make_unique<CA> (s, "style", styleBox);
-
-    startTimerHz (30);
-}
-
-MixDoctorEditor::~MixDoctorEditor() { stopTimer(); }
-
-void MixDoctorEditor::styleSlider (Slider& s, const String& suffix)
-{
-    s.setSliderStyle (Slider::LinearHorizontal);
-    s.setTextBoxStyle (Slider::TextBoxRight, false, 78, 22);
-    s.setTextValueSuffix (suffix);
-    s.setColour (Slider::trackColourId, kAccent);
-    s.setColour (Slider::thumbColourId, kText);
-    s.setColour (Slider::backgroundColourId, Colour (0xff2a313c));
-    s.setColour (Slider::textBoxTextColourId, kText);
-    s.setColour (Slider::textBoxOutlineColourId, Colours::transparentBlack);
-    addAndMakeVisible (s);
-}
-
-void MixDoctorEditor::styleToggle (ToggleButton& b, const String& text)
-{
-    b.setButtonText (text);
-    b.setColour (ToggleButton::textColourId, kText);
-    b.setColour (ToggleButton::tickColourId, kAccent);
-    b.setColour (ToggleButton::tickDisabledColourId, kDim);
-    addAndMakeVisible (b);
-}
-
-void MixDoctorEditor::resized()
-{
-    auto r = getLocalBounds().reduced (16);
-    r.removeFromTop (52);                                            // header
-    auto top = r.removeFromTop (330);
-    issuesArea = top.removeFromLeft (520);
-    top.removeFromLeft (12);
-    bandsArea = top;
-    r.removeFromTop (12);
-    controlsArea = r;
-
-    auto c = controlsArea.reduced (12, 8);
-    const int rowH = 38;
-    auto row = [&] { return c.removeFromTop (rowH); };
-    auto place = [] (Rectangle<int>& rw, Component& comp, int w) { comp.setBounds (rw.removeFromLeft (w)); };
-
-    { auto rw = row(); place (rw, cleanB, 300); }
-    { auto rw = row(); place (rw, monoB, 170); place (rw, monoFreqL, 34); place (rw, monoFreqS, 230); rw.removeFromLeft (14);
-      place (rw, monoAmtL, 50); place (rw, monoAmtS, 230); }
-    { auto rw = row(); place (rw, toneB, 110); styleBox.setBounds (rw.removeFromLeft (110).reduced (0, 6)); rw.removeFromLeft (10);
-      place (rw, toneAmtL, 50); place (rw, toneAmtS, 190); rw.removeFromLeft (10); place (rw, toneMaxL, 30); place (rw, toneMaxS, 160);
-      rw.removeFromLeft (8); captureBtn.setBounds (rw.removeFromLeft (110).reduced (0, 6)); }
-    { auto rw = row(); place (rw, harshB, 170); place (rw, harshMaxL, 58); place (rw, harshMaxS, 230); }
-    { auto rw = row(); place (rw, limB, 170); place (rw, ceilL, 58); place (rw, ceilS, 230); }
-}
-
-std::vector<MixDoctorEditor::Issue> MixDoctorEditor::evaluate() const
-{
-    using namespace mixdoctor;
-    const auto& m = proc.doctor.meters;
-    const bool ready = m.ready.load() > 0.5f;
-    const bool cleanOn = proc.apvts.getRawParameterValue ("cleanLow")->load() > 0.5f,
-               monoOn  = proc.apvts.getRawParameterValue ("monoLow")->load()  > 0.5f,
-               toneOn  = proc.apvts.getRawParameterValue ("autoTone")->load() > 0.5f,
-               harshOn = proc.apvts.getRawParameterValue ("harsh")->load()    > 0.5f,
-               limOn   = proc.apvts.getRawParameterValue ("limiter")->load()  > 0.5f;
-
-    std::vector<Issue> v;
-    auto fixOrIssue = [] (bool fixed) { return fixed ? std::pair<String, Colour> { "FIXED", kAccent } : std::pair<String, Colour> { "ISSUE", kBad }; };
-
-    {   // 1. peaks
-        const float over = m.peakOverDb.load(), gr = m.limGR.load();
-        if (over > 0.05f) { auto t = fixOrIssue (limOn); v.push_back ({ "Clipping / peaks", "Peaks reach " + String (over, 1) + " dB over the ceiling" + (limOn ? "  (limiter -" + String (gr, 1) + " dB)" : ""), t.first, t.second }); }
-        else               v.push_back ({ "Clipping / peaks", "Peaks stay under the ceiling", "OK", kOk });
+    // ---- knobs
+    for (int i = 0; i < 20; ++i)
+    {
+        auto& k = knobs[(size_t) i];
+        const auto& id = params::knobOrder[i];
+        panel.addAndMakeVisible (k);
+        sliderAttachments.push_back (std::make_unique<AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, id, k));
+        if (auto* param = proc.apvts.getParameter (id))
+            k.setDoubleClickReturnValue (true, (double) param->convertFrom0to1 (param->getDefaultValue()));
+        k.setPopupDisplayEnabled (true, false, &panel, 900);
+        k.setTitle (params::knobLabels[i]);
     }
-    {   // 2. DC
-        const float dc = m.dcOffset.load();
-        if (dc > 0.002f) { auto t = fixOrIssue (cleanOn); v.push_back ({ "DC offset", "Offset of " + String (dc, 4) + " eats headroom", t.first, t.second }); }
-        else              v.push_back ({ "DC offset", "None detected", "OK", kOk });
-    }
-    {   // 3. rumble
-        const float r = m.rumbleRel.load();
-        if (ready && r > -14.f) { auto t = fixOrIssue (cleanOn); v.push_back ({ "Subsonic rumble", "Energy below 22 Hz is only " + String (-r, 0) + " dB under the sub", t.first, t.second }); }
-        else                      v.push_back ({ "Subsonic rumble", ready ? "Clean below 25 Hz" : "Analysing...", ready ? "OK" : "...", ready ? kOk : kDim });
-    }
-    {   // 4. low-end width
-        const float s = m.lowSideDb.load();
-        if (ready && s > -18.f) { auto t = fixOrIssue (monoOn); v.push_back ({ "Low-end width", "Bass side signal is " + String (s, 1) + " dB re mid - not mono-safe", t.first, t.second }); }
-        else                      v.push_back ({ "Low-end width", ready ? "Low end is essentially mono" : "Analysing...", ready ? "OK" : "...", ready ? kOk : kDim });
-    }
-    {   // 5. phase (advisory only - flipping polarity on a master bus is not safe to automate)
-        const float c = m.correlation.load();
-        if (ready && c < 0.f)      v.push_back ({ "Phase / mono check", "Correlation " + String (c, 2) + ": will partly cancel in mono. Check polarity of stereo FX", "CHECK", kWarn });
-        else if (ready && c < 0.3f) v.push_back ({ "Phase / mono check", "Correlation " + String (c, 2) + ": very wide; check on a mono speaker", "CHECK", kWarn });
-        else                         v.push_back ({ "Phase / mono check", ready ? "Correlation " + String (c, 2) : "Analysing...", ready ? "OK" : "...", ready ? kOk : kDim });
-    }
-    {   // 6. tonal balance
-        float worst = 0.f; int wi = 0;
-        for (int i = 0; i < kNumBands; ++i) { const float d = m.bandRel[i].load() - m.targetRel[i].load(); if (std::abs (d) > std::abs (worst)) { worst = d; wi = i; } }
-        if (ready && std::abs (worst) > 3.f)
+    releaseAutoAttachment = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, params::releaseAuto, releaseAutoButton);
+
+    // ---- top bar
+    powerButton.onClick = [this]
+    {
+        if (auto* b = proc.apvts.getParameter (params::bypass))
         {
-            auto t = fixOrIssue (toneOn);
-            v.push_back ({ "Tonal balance", String (bandName (wi)) + " is " + String (std::abs (worst), 1) + " dB " + (worst > 0 ? "above" : "below") + " target", t.first, t.second });
+            b->beginChangeGesture();
+            b->setValueNotifyingHost (b->getValue() > 0.5f ? 0.0f : 1.0f);
+            b->endChangeGesture();
         }
-        else v.push_back ({ "Tonal balance", ready ? "Within 3 dB of target" : "Analysing...", ready ? "OK" : "...", ready ? kOk : kDim });
-    }
-    {   // 7. harshness
-        const float g = m.harshGR.load();
-        if (g > 0.8f) { auto t = fixOrIssue (harshOn); v.push_back ({ "Harshness 2.5-7 kHz", "Bursts jump out of the mix" + String (harshOn ? " (cutting " + String (g, 1) + " dB)" : ""), t.first, t.second }); }
-        else           v.push_back ({ "Harshness 2.5-7 kHz", ready ? "No harsh bursts" : "Analysing...", ready ? "OK" : "...", ready ? kOk : kDim });
-    }
-    {   // 8. density (advisory)
-        const float crest = m.peakDb.load() - m.rmsDb.load();
-        if (ready && crest < 6.f)  v.push_back ({ "Density", "Crest factor " + String (crest, 1) + " dB: very squashed. Ease off upstream compression/clipping", "CHECK", kWarn });
-        else                        v.push_back ({ "Density", ready ? "Crest factor " + String (crest, 1) + " dB" : "Analysing...", ready ? "OK" : "...", ready ? kOk : kDim });
-    }
-    return v;
+    };
+    autoFixButton.onClick = [this] { toggleAutoFix(); };
+    prevButton.onClick = [this] { proc.presets.loadNext (-1); refreshPresetBox(); };
+    nextButton.onClick = [this] { proc.presets.loadNext (+1); refreshPresetBox(); };
+    starButton.onClick = [this] { proc.presets.toggleFavourite (proc.presets.getCurrentName()); refreshPresetBox(); };
+    menuButton.onClick = [this] { showMainMenu(); };
+    folderButton.onClick = [this] { showPresetBrowser(); };
+    abButton.onClick = [this] { proc.toggleAB(); };
+
+    presetBox.setJustificationType (Justification::centred);
+    presetBox.onChange = [this]
+    {
+        const int id = presetBox.getSelectedId();
+        if (id <= 0) return;
+        proc.presets.load (id >= favouriteIdOffset ? id - favouriteIdOffset : id - 1);
+        refreshPresetBox();
+    };
+
+    cpuDisplay.setValueText ("0.0");
+    lufsIntDisplay.onClick = [this] { proc.meters.resetRequested = true; };
+    truePeakDisplay.onClick = [this] { proc.meters.resetRequested = true; };
+
+    visualizer.onFrame = [this] (double dt)
+    {
+        vuLeft.setLevel (visualizer.getRmsL());
+        vuRight.setLevel (visualizer.getRmsR());
+        vuLeft.tick (dt);
+        vuRight.tick (dt);
+    };
+
+    layout();
+    refreshPresetBox();
+    vuLeft.referenceDbfs = vuRight.referenceDbfs = proc.apvts.getRawParameterValue (params::loudness)->load();
+
+    // resizing: aspect ratio locked, whole panel scaled
+    setResizable (true, true);
+    setResizeLimits (designW * 6 / 10, designH * 6 / 10, designW * 2, designH * 2);
+    getConstrainer()->setFixedAspectRatio ((double) designW / designH);
+    setSize (jlimit (designW * 6 / 10, designW * 2, proc.editorWidth),
+             roundToInt (jlimit (designW * 6 / 10, designW * 2, proc.editorWidth) * (double) designH / designW));
+
+    proc.editorOpen = true;
+    startTimerHz (60);
 }
 
-void MixDoctorEditor::paint (Graphics& g)
+DnBMixDoctorEditor::~DnBMixDoctorEditor()
 {
-    using namespace mixdoctor;
-    g.fillAll (kBg);
+    proc.editorOpen = false;
+    for (auto& s : sweeps) s.param->endChangeGesture();
+    setLookAndFeel (nullptr);
+}
 
-    // header
-    g.setColour (kText);  g.setFont (FontOptions (26.f, Font::bold));
-    g.drawText ("DnB MIX DOCTOR", 20, 12, 400, 34, Justification::centredLeft);
-    g.setColour (kAccent); g.fillRoundedRectangle (20.f, 46.f, 56.f, 3.f, 1.5f);
-    g.setColour (kDim);   g.setFont (FontOptions (12.f));
-    g.drawText ("detects and corrects problems on your drum & bass master  -  latency "
-                    + String (1000.0 * proc.doctor.latencySamples() / std::max (1.0, proc.getSampleRate()), 1) + " ms",
-                380, 16, getWidth() - 400, 28, Justification::centredRight);
+void DnBMixDoctorEditor::resized()
+{
+    const float scale = (float) getWidth() / (float) designW;
+    panel.setBounds (0, 0, designW, designH);
+    panel.setTransform (AffineTransform::scale (scale));
+    proc.editorWidth = getWidth();
+    proc.editorHeight = getHeight();
+}
 
-    // issues panel
-    g.setColour (kPanel); g.fillRoundedRectangle (issuesArea.toFloat(), 10.f);
-    g.setColour (kDim);   g.setFont (FontOptions (11.f, Font::bold)); g.drawText ("MIX CHECK", issuesArea.getX() + 16, issuesArea.getY() + 8, 200, 18, Justification::centredLeft);
-    const auto issues = evaluate();
-    auto ir = issuesArea.reduced (16, 0).withTrimmedTop (30);
-    for (auto& is : issues)
+void DnBMixDoctorEditor::layout()
+{
+    // top bar
+    powerButton.setBounds (44, 10, 58, 36);
+    autoFixButton.setBounds (108, 10, 58, 36);
+    prevButton.setBounds (452, 10, 40, 36);
+    presetBox.setBounds (498, 12, 304, 32);
+    nextButton.setBounds (808, 10, 40, 36);
+    starButton.setBounds (854, 10, 40, 36);
+    cpuDisplay.setBounds (1112, 12, 90, 32);
+    menuButton.setBounds (1210, 10, 50, 36);
+
+    // second row
+    folderButton.setBounds (44, 54, 58, 36);
+    abButton.setBounds (1196, 54, 64, 36);
+
+    // visualiser + meters
+    visualizer.setBounds (visArea);
+    vuLeft.setBounds (40, 100, 188, 142);
+    vuRight.setBounds (1072, 100, 188, 142);
+    lufsIntDisplay.setBounds (40, 246, 188, 60);
+    lufsShortDisplay.setBounds (40, 310, 188, 60);
+    truePeakDisplay.setBounds (1072, 246, 188, 60);
+    grDisplay.setBounds (1072, 310, 188, 60);
+
+    // 2 x 10 knobs, label above each knob
+    const int cellW = knobsW / 10;
+    for (int i = 0; i < 20; ++i)
     {
-        auto row = ir.removeFromTop (36);
-        g.setColour (is.colour); g.fillEllipse ((float) row.getX(), (float) row.getCentreY() - 5.f, 10.f, 10.f);
-        g.setColour (kText); g.setFont (FontOptions (13.f, Font::bold));
-        g.drawText (is.title, row.getX() + 20, row.getY(), 150, row.getHeight(), Justification::centredLeft);
-        g.setColour (kDim);  g.setFont (FontOptions (12.f));
-        g.drawFittedText (is.message, row.getX() + 172, row.getY(), row.getWidth() - 172 - 62, row.getHeight(), Justification::centredLeft, 2);
-        g.setColour (is.colour.withAlpha (0.18f)); g.fillRoundedRectangle ((float) row.getRight() - 56.f, (float) row.getCentreY() - 10.f, 56.f, 20.f, 5.f);
-        g.setColour (is.colour); g.setFont (FontOptions (11.f, Font::bold));
-        g.drawText (is.tag, row.getRight() - 56, row.getCentreY() - 10, 56, 20, Justification::centred);
+        const int row = i / 10, c = i % 10;
+        const Rectangle<int> cell (knobsX + c * cellW, rowY[row], cellW, rowH);
+        knobCells[(size_t) i] = cell;
+        knobs[(size_t) i].setBounds (cell.withTrimmedTop (18).withHeight (112).withSizeKeepingCentre (112, 112));
+    }
+    const auto relCell = knobCells[12];
+    releaseAutoButton.setBounds (relCell.getCentreX() - 32, relCell.getBottom() - 19, 64, 20);
+}
+
+//==============================================================================
+void DnBMixDoctorEditor::Panel::renderBackground (float scale)
+{
+    bgScale = scale;
+    const int W = DnBMixDoctorEditor::designW, H = DnBMixDoctorEditor::designH;
+    background = Image (Image::RGB, roundToInt (W * scale), roundToInt (H * scale), true);
+    Graphics g (background);
+    g.addTransform (AffineTransform::scale (scale));
+    Random rng (1975);
+
+    // ---- walnut side cheeks
+    for (int side = 0; side < 2; ++side)
+    {
+        const auto r = Rectangle<float> (side == 0 ? 0.0f : (float) (W - cheek), 0.0f, (float) cheek, (float) H);
+        ColourGradient wood (col::walnutDark, r.getX(), 0, col::walnutDark, r.getRight(), 0, false);
+        wood.addColour (0.25, col::walnutLight);
+        wood.addColour (0.6, col::walnut);
+        g.setGradientFill (wood);
+        g.fillRect (r);
+        for (int i = 0; i < 70; ++i)
+        {
+            Path grain;
+            float x = r.getX() + rng.nextFloat() * r.getWidth();
+            const float freq = 0.004f + rng.nextFloat() * 0.01f, amp = 0.4f + rng.nextFloat() * 1.6f, ph = rng.nextFloat() * 6.0f;
+            grain.startNewSubPath (x, 0);
+            for (float y = 0; y <= (float) H; y += 8.0f)
+                grain.lineTo (jlimit (r.getX(), r.getRight(), x + std::sin (y * freq + ph) * amp), y);
+            g.setColour ((rng.nextBool() ? Colour (0xff1a0d05) : Colour (0xff9a6440)).withAlpha (0.10f + rng.nextFloat() * 0.18f));
+            g.strokePath (grain, PathStrokeType (0.5f + rng.nextFloat() * 1.2f));
+        }
+        ColourGradient varnish (Colours::white.withAlpha (0.10f), r.getX() + r.getWidth() * 0.3f, 0,
+                                Colours::transparentWhite, r.getRight(), 0, false);
+        g.setGradientFill (varnish);
+        g.fillRect (r);
     }
 
-    // tonal balance panel
-    g.setColour (kPanel); g.fillRoundedRectangle (bandsArea.toFloat(), 10.f);
-    g.setColour (kDim);   g.setFont (FontOptions (11.f, Font::bold)); g.drawText ("TONAL BALANCE  (dB per octave, vs target)", bandsArea.getX() + 16, bandsArea.getY() + 8, 300, 18, Justification::centredLeft);
-    auto br = bandsArea.reduced (14, 0).withTrimmedTop (34).withTrimmedBottom (46);
-    const float zeroY = (float) br.getCentreY(), scale = (float) br.getHeight() * 0.5f / 12.f;
-    g.setColour (Colour (0x22ffffff)); g.drawHorizontalLine ((int) zeroY, (float) br.getX(), (float) br.getRight());
-    const float colW = (float) br.getWidth() / kNumBands;
-    const auto& m = proc.doctor.meters;
-    for (int i = 0; i < kNumBands; ++i)
+    // ---- brushed champagne aluminium faceplate
+    const auto plate = plateArea.toFloat();
+    ColourGradient base (col::panelLight, 0, 0, col::panelDark, 0, (float) H, false);
+    base.addColour (0.45, col::panel);
+    g.setGradientFill (base);
+    g.fillRect (plate);
+    for (float y = 0; y < (float) H; y += 0.5f)
+        for (int k = 0; k < 3; ++k)
+        {
+            const float x0 = plate.getX() + rng.nextFloat() * plate.getWidth();
+            const float len = 40.0f + rng.nextFloat() * 520.0f;
+            g.setColour ((rng.nextBool() ? Colours::white : Colour (0xff5a4e36)).withAlpha (0.025f + rng.nextFloat() * 0.05f));
+            g.fillRect (x0, y, jmin (len, plate.getRight() - x0), 0.5f);
+        }
+    for (float cx : { 0.28f, 0.72f })
     {
-        const float x = (float) br.getX() + colW * (float) i, bw = colW * 0.5f, bx = x + colW * 0.25f;
-        const float rel = jlimit (-12.f, 12.f, m.bandRel[i].load()), tgt = jlimit (-12.f, 12.f, m.targetRel[i].load());
-        const float dev = std::abs (rel - tgt);
-        g.setColour ((dev < 3.f ? kAccent : dev < 6.f ? kWarn : kBad).withAlpha (0.85f));
-        g.fillRect (bx, jmin (zeroY, zeroY - rel * scale), bw, std::abs (rel * scale));
-        g.setColour (kText); g.fillRect (bx - 4.f, zeroY - tgt * scale - 1.5f, bw + 8.f, 3.f);
-        const float corr = m.bandCorr[i].load();
-        g.setColour (std::abs (corr) > 0.15f ? kAccent : kDim); g.setFont (FontOptions (11.f));
-        g.drawText ((corr >= 0 ? "+" : "") + String (corr, 1), (int) x, bandsArea.getBottom() - 42, (int) colW, 16, Justification::centred);
-        g.setColour (kDim); g.setFont (FontOptions (10.f));
-        g.drawText (bandName (i), (int) x - 4, bandsArea.getBottom() - 26, (int) colW + 8, 16, Justification::centred);
+        ColourGradient sheen (Colours::white.withAlpha (0.09f), plate.getX() + plate.getWidth() * cx, 0,
+                              Colours::transparentWhite, plate.getX() + plate.getWidth() * (cx + 0.18f), 0, false);
+        g.setGradientFill (sheen);
+        g.fillRect (plate);
     }
-    g.setColour (kDim); g.setFont (FontOptions (10.f));
-    g.drawText ("bars = your mix   |   white tick = target   |   numbers = EQ applied (dB)", bandsArea.getX() + 14, bandsArea.getY() + 24, bandsArea.getWidth() - 28, 14, Justification::centredLeft);
+    g.setColour (Colours::black.withAlpha (0.45f));
+    g.drawVerticalLine (cheek, 0, (float) H);
+    g.drawVerticalLine (W - cheek - 1, 0, (float) H);
+    g.setColour (Colours::white.withAlpha (0.5f));
+    g.drawHorizontalLine (0, plate.getX(), plate.getRight());
 
-    // controls panel
-    g.setColour (kPanel); g.fillRoundedRectangle (controlsArea.toFloat(), 10.f);
-    g.setColour (kDim);   g.setFont (FontOptions (10.f));
-    g.drawText ("Targets are starting-point estimates for each style - use Capture target on a reference you love for ground truth.",
-                controlsArea.getX() + 14, controlsArea.getBottom() - 20, controlsArea.getWidth() - 28, 16, Justification::centredLeft);
+    // ---- engraved section rules
+    auto rule = [&] (float y, float x0, float x1)
+    {
+        g.setColour (Colours::black.withAlpha (0.35f)); g.drawHorizontalLine ((int) y, x0, x1);
+        g.setColour (Colours::white.withAlpha (0.5f));  g.drawHorizontalLine ((int) y + 1, x0, x1);
+    };
+    rule (50.0f, 40.0f, 1260.0f);
+    rule (377.0f, 40.0f, 1260.0f);
+    rule (528.0f, 40.0f, 1260.0f);
+    rule (677.0f, 40.0f, 1260.0f);
+
+    // ---- title
+    hifi::drawEngravedText (g, "DNB MIX DOCTOR", { 0.0f, 52.0f, (float) W, 32.0f },
+                            hifi::labelFont (27.0f, true).withExtraKerningFactor (0.18f));
+    hifi::drawEngravedText (g, "DRUM & BASS MIX REPAIR SYSTEM  -  MODEL MD-1", { 0.0f, 83.0f, (float) W, 12.0f },
+                            hifi::labelFont (8.5f).withExtraKerningFactor (0.25f));
+
+    // ---- captions
+    hifi::drawEngravedText (g, "CPU %", { 1050.0f, 12.0f, 58.0f, 32.0f }, hifi::labelFont (10.0f), Justification::centredRight);
+    hifi::drawEngravedText (g, "PRESET", { 380.0f, 12.0f, 66.0f, 32.0f }, hifi::labelFont (10.0f), Justification::centredRight);
+    hifi::drawEngravedText (g, "PRESETS", { 106.0f, 54.0f, 80.0f, 36.0f }, hifi::labelFont (9.0f), Justification::centredLeft);
+    hifi::drawEngravedText (g, "COMPARE", { 1110.0f, 54.0f, 80.0f, 36.0f }, hifi::labelFont (9.0f), Justification::centredRight);
+
+    // ---- knob labels (engraved, centred above each knob)
+    for (int i = 0; i < 20; ++i)
+        hifi::drawEngravedText (g, params::knobLabels[i], owner.knobCells[(size_t) i].withHeight (16).toFloat(),
+                                hifi::labelFont (11.0f), Justification::centred);
+
+    // ---- developer badge (bottom-left) and version (bottom-right)
+    auto badge = Rectangle<float> (40.0f, 681.0f, 118.0f, 15.0f);
+    ColourGradient bg (Colour (0xff2a2622), 0, badge.getY(), Colour (0xff0d0b09), 0, badge.getBottom(), false);
+    g.setGradientFill (bg);
+    g.fillRoundedRectangle (badge, 3.0f);
+    g.setColour (Colour (0xffd9d4c8));
+    g.drawRoundedRectangle (badge.reduced (0.5f), 3.0f, 1.0f);
+    g.setFont (hifi::labelFont (8.5f).withExtraKerningFactor (0.2f));
+    g.drawText ("MOD CON DSP", badge, Justification::centred);
+    hifi::drawEngravedText (g, "1.0", { 1200.0f, 681.0f, 60.0f, 15.0f }, hifi::labelFont (9.0f), Justification::centredRight);
+}
+
+void DnBMixDoctorEditor::Panel::paint (Graphics& g)
+{
+    const float scale = g.getInternalContext().getPhysicalPixelScaleFactor();
+    if (background.isNull() || std::abs (bgScale - scale) > 0.01f)
+        renderBackground (scale);
+    g.drawImage (background, getLocalBounds().toFloat());
+}
+
+//==============================================================================
+void DnBMixDoctorEditor::timerCallback()
+{
+    updateSweep();
+
+    if (auto* b = proc.apvts.getParameter (params::bypass))
+        powerButton.setToggleState (b->getValue() < 0.5f, dontSendNotification);
+
+    // ---- auto-fix listening / results
+    switch (proc.autoFix.getState())
+    {
+        case mcdsp::AutoFixAnalyser::listening:
+            autoFixButton.setToggleState (true, dontSendNotification);
+            autoFixButton.setBlink (true);
+            autoFixButton.setProgress (jmax (0.01f, proc.autoFix.getProgress()));
+            break;
+        case mcdsp::AutoFixAnalyser::done:
+        {
+            const auto result = proc.autoFix.getResult();
+            proc.autoFix.acknowledge();
+            autoFixButton.setBlink (false);
+            autoFixButton.setProgress (0.0f);
+            startSweep (mcdsp::suggestSettings (result, proc.hostBpm.load()));
+            proc.presets.setCurrentName ("Auto-Fix");
+            break;
+        }
+        default:
+            autoFixButton.setBlink (false);
+            autoFixButton.setProgress (0.0f);
+            autoFixButton.setToggleState (! sweeps.empty(), dontSendNotification);
+            break;
+    }
+
+    // ---- slower UI (text readouts, preset sync) at ~12 Hz
+    const auto now = Time::getMillisecondCounter();
+    if (now - lastSlowUpdate < 80) return;
+    lastSlowUpdate = now;
+
+    const auto& m = proc.meters;
+    cpuDisplay.setValueText (String (m.cpuPercent.load(), 1));
+    lufsIntDisplay.setValueText (fmtMeter (m.lufsIntegrated.load()));
+    lufsShortDisplay.setValueText (fmtMeter (m.lufsShortTerm.load()));
+    truePeakDisplay.setValueText (fmtMeter (m.truePeakDb.load()));
+    grDisplay.setValueText (String (jmin (0.0f, m.glueGrDb.load() + m.limiterGrDb.load()), 1));
+
+    // 0 VU == the LOUDNESS target, so a needle sitting on 0 means "on target"
+    vuLeft.referenceDbfs = vuRight.referenceDbfs = proc.apvts.getRawParameterValue (params::loudness)->load();
+
+    abButton.setText (proc.isOnB() ? "B" : "A");
+    abButton.setToggleState (proc.isOnB(), dontSendNotification);
+    starButton.setToggleState (proc.presets.isFavourite (proc.presets.getCurrentName()), dontSendNotification);
+
+    if (proc.presets.getCurrentName() != shownPreset || (int) proc.presets.getAll().size() != shownPresetCount)
+        refreshPresetBox();
+}
+
+void DnBMixDoctorEditor::refreshPresetBox()
+{
+    const auto& all = proc.presets.getAll();
+    presetBox.clear (dontSendNotification);
+
+    bool anyFav = false;
+    for (size_t i = 0; i < all.size(); ++i)
+        if (proc.presets.isFavourite (all[i].name))
+        {
+            if (! anyFav) { presetBox.addSectionHeading ("Favourites"); anyFav = true; }
+            presetBox.addItem (all[i].name, favouriteIdOffset + (int) i);
+        }
+    presetBox.addSectionHeading ("Factory");
+    bool userHeading = false;
+    for (size_t i = 0; i < all.size(); ++i)
+    {
+        if (! all[i].factory && ! userHeading) { presetBox.addSectionHeading ("User"); userHeading = true; }
+        presetBox.addItem (all[i].name, (int) i + 1);
+    }
+
+    shownPreset = proc.presets.getCurrentName();
+    shownPresetCount = (int) all.size();
+    const int idx = proc.presets.indexOf (shownPreset);
+    if (idx >= 0) presetBox.setSelectedId (idx + 1, dontSendNotification);
+    else          presetBox.setText (shownPreset, dontSendNotification);
+    starButton.setToggleState (proc.presets.isFavourite (shownPreset), dontSendNotification);
+}
+
+//==============================================================================
+void DnBMixDoctorEditor::showPresetBrowser()
+{
+    auto& pm = proc.presets;
+    pm.refresh();
+    const auto& all = pm.getAll();
+    const auto current = pm.getCurrentName();
+
+    PopupMenu menu, favs, factory, user;
+    for (size_t i = 0; i < all.size(); ++i)
+    {
+        const int id = (int) i + 1;
+        auto& target = all[i].factory ? factory : user;
+        target.addItem (id, all[i].name, true, all[i].name == current);
+        if (pm.isFavourite (all[i].name))
+            favs.addItem (favouriteIdOffset + id, all[i].name, true, all[i].name == current);
+    }
+    menu.addSectionHeader ("Preset browser");
+    menu.addSubMenu ("Favourites", favs, favs.getNumItems() > 0);
+    menu.addSubMenu ("Factory", factory);
+    menu.addSubMenu ("User", user, user.getNumItems() > 0);
+    menu.addSeparator();
+    menu.addItem (5001, "Save preset as...");
+    const int curIdx = pm.indexOf (current);
+    menu.addItem (5002, "Delete \"" + current + "\"", curIdx >= 0 && ! all[(size_t) curIdx].factory);
+    menu.addItem (5003, "Open preset folder");
+
+    menu.showMenuAsync (PopupMenu::Options().withTargetComponent (folderButton).withParentComponent (&panel),
+                        [this] (int r)
+                        {
+                            auto& p = proc.presets;
+                            if (r == 5001) savePresetDialog();
+                            else if (r == 5002) { p.deleteUser (p.getCurrentName()); p.setCurrentName ("Default"); }
+                            else if (r == 5003) PresetManager::getUserFolder().startAsProcess();
+                            else if (r > favouriteIdOffset) p.load (r - favouriteIdOffset - 1);
+                            else if (r > 0) p.load (r - 1);
+                            refreshPresetBox();
+                        });
+}
+
+void DnBMixDoctorEditor::savePresetDialog()
+{
+    auto* w = new AlertWindow ("Save preset", "Name for the user preset:", MessageBoxIconType::NoIcon, this);
+    w->setLookAndFeel (&lnf);
+    const auto current = proc.presets.getCurrentName();
+    w->addTextEditor ("name", PresetManager::getFactoryNames().contains (current) ? current + " (mine)" : current);
+    w->addButton ("Save", 1, KeyPress (KeyPress::returnKey));
+    w->addButton ("Cancel", 0, KeyPress (KeyPress::escapeKey));
+    w->enterModalState (true, ModalCallbackFunction::create ([this, w] (int result)
+    {
+        if (result == 1)
+            proc.presets.saveUser (w->getTextEditorContents ("name"));
+        refreshPresetBox();
+    }), true);
+}
+
+void DnBMixDoctorEditor::showMainMenu()
+{
+    PopupMenu menu;
+    const bool os = proc.apvts.getParameter (params::oversample)->getValue() > 0.5f;
+    menu.addSectionHeader ("DnB Mix Doctor 1.0 - Mod Con DSP");
+    menu.addItem (1, "4x oversampling (saturation + limiter)", true, os);
+    menu.addItem (2, "Reset loudness / true-peak meters");
+    menu.addItem (3, String ("Switch to ") + (proc.isOnB() ? "A" : "B") + " (compare)");
+    menu.addSeparator();
+    menu.addItem (4, "Run auto-fix (listens for 8 bars)");
+    menu.addItem (5, "Reset all knobs to Default preset");
+
+    menu.showMenuAsync (PopupMenu::Options().withTargetComponent (menuButton).withParentComponent (&panel),
+                        [this] (int r)
+                        {
+                            if (r == 1)
+                            {
+                                auto* p = proc.apvts.getParameter (params::oversample);
+                                p->beginChangeGesture();
+                                p->setValueNotifyingHost (p->getValue() > 0.5f ? 0.0f : 1.0f);
+                                p->endChangeGesture();
+                            }
+                            else if (r == 2) proc.meters.resetRequested = true;
+                            else if (r == 3) proc.toggleAB();
+                            else if (r == 4) toggleAutoFix();
+                            else if (r == 5) { proc.presets.load ("Default"); refreshPresetBox(); }
+                        });
+}
+
+//==============================================================================
+void DnBMixDoctorEditor::toggleAutoFix()
+{
+    if (proc.autoFix.getState() == mcdsp::AutoFixAnalyser::listening)
+    {
+        proc.autoFix.cancel();
+        return;
+    }
+    const double bpm = jlimit (60.0, 240.0, proc.hostBpm.load());
+    const double eightBars = 8.0 * 4.0 * 60.0 / bpm;
+    proc.autoFix.start (eightBars);
+    autoFixButton.setToggleState (true, dontSendNotification);
+}
+
+void DnBMixDoctorEditor::startSweep (const std::vector<std::pair<String, float>>& targets)
+{
+    for (auto& s : sweeps) s.param->endChangeGesture();
+    sweeps.clear();
+
+    auto add = [this] (const String& id, float value, double delay)
+    {
+        if (auto* p = proc.apvts.getParameter (id))
+        {
+            p->beginChangeGesture();
+            sweeps.push_back ({ p, p->getValue(), p->convertTo0to1 (value), delay });
+        }
+    };
+    for (size_t i = 0; i < targets.size(); ++i)
+    {
+        // stagger by knob position so the sweep rolls across the panel
+        const int pos = params::knobOrder.indexOf (targets[i].first);
+        add (targets[i].first, targets[i].second, 0.045 * jmax (0, pos));
+    }
+    add (params::releaseAuto, 1.0f, 0.0);
+    sweepStart = Time::getMillisecondCounterHiRes() * 0.001;
+}
+
+void DnBMixDoctorEditor::updateSweep()
+{
+    if (sweeps.empty()) return;
+    const double t = Time::getMillisecondCounterHiRes() * 0.001 - sweepStart;
+    bool finished = true;
+    for (auto& s : sweeps)
+    {
+        const float k = (float) jlimit (0.0, 1.0, (t - s.delay) / 1.1);
+        s.param->setValueNotifyingHost (s.from + (s.to - s.from) * easeInOut (k));
+        finished = finished && k >= 1.0f;
+    }
+    if (finished)
+    {
+        for (auto& s : sweeps) s.param->endChangeGesture();
+        sweeps.clear();
+    }
 }

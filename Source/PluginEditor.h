@@ -1,41 +1,82 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
-#include <juce_gui_basics/juce_gui_basics.h>
 #include "PluginProcessor.h"
+#include "ui/HiFiLookAndFeel.h"
+#include "ui/Widgets.h"
+#include "ui/VUMeter.h"
+#include "ui/Visualizer.h"
 
-class MixDoctorEditor : public juce::AudioProcessorEditor, private juce::Timer
+/** 1300 x 700 design-size editor. Everything lives in `panel`, which is scaled with an affine transform
+    so the window can be resized with a locked aspect ratio while staying pixel-sharp. */
+class DnBMixDoctorEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
-    explicit MixDoctorEditor (MixDoctorProcessor&);
-    ~MixDoctorEditor() override;
+    static constexpr int designW = 1300, designH = 700;
 
-    void paint (juce::Graphics&) override;
+    explicit DnBMixDoctorEditor (DnBMixDoctorProcessor&);
+    ~DnBMixDoctorEditor() override;
+
     void resized() override;
+    void paint (juce::Graphics& g) override { g.fillAll (hifi::colours::walnutDark); }
 
 private:
-    struct Issue { juce::String title, message, tag; juce::Colour colour; };
-    std::vector<Issue> evaluate() const;
-    void timerCallback() override { repaint(); }
+    //==============================================================================
+    class Panel : public juce::Component
+    {
+    public:
+        explicit Panel (DnBMixDoctorEditor& e) : owner (e) { setOpaque (true); }
+        void paint (juce::Graphics&) override;
+    private:
+        void renderBackground (float scale);
+        DnBMixDoctorEditor& owner;
+        juce::Image background;
+        float bgScale = 0.0f;
+    };
 
-    void styleSlider (juce::Slider&, const juce::String& suffix);
-    void styleToggle (juce::ToggleButton&, const juce::String& text);
+    void layout();
+    void timerCallback() override;
+    void refreshPresetBox();
+    void showPresetBrowser();
+    void showMainMenu();
+    void savePresetDialog();
+    void toggleAutoFix();
+    void startSweep (const std::vector<std::pair<juce::String, float>>& targets);
+    void updateSweep();
 
-    MixDoctorProcessor& proc;
+    DnBMixDoctorProcessor& proc;
+    hifi::LookAndFeel lnf;
+    Panel panel { *this };
 
-    juce::ToggleButton cleanB, monoB, toneB, harshB, limB;
-    juce::Slider monoFreqS, monoAmtS, toneAmtS, toneMaxS, harshMaxS, ceilS;
-    juce::Label  monoFreqL, monoAmtL, toneAmtL, toneMaxL, harshMaxL, ceilL;
-    juce::ComboBox styleBox;
-    juce::TextButton captureBtn { "Capture target" };
+    using Icon = hifi::ChromeButton::Icon;
+    hifi::ChromeButton powerButton { "Power", Icon::power, true },
+                       autoFixButton { "Auto-Fix", Icon::bolt, true },
+                       prevButton { "Previous preset", Icon::left, false },
+                       nextButton { "Next preset", Icon::right, false },
+                       starButton { "Favourite", Icon::star, false },
+                       menuButton { "Menu", Icon::menu, false },
+                       folderButton { "Preset browser", Icon::folder, false },
+                       abButton { "A/B", Icon::none, true },
+                       releaseAutoButton { "Auto release", Icon::none, true };
+    juce::ComboBox presetBox;
+    hifi::VfdDisplay cpuDisplay { {} };
 
-    using SA = juce::AudioProcessorValueTreeState::SliderAttachment;
-    using BA = juce::AudioProcessorValueTreeState::ButtonAttachment;
-    using CA = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
-    std::unique_ptr<BA> cleanA, monoA, toneA, harshA, limA;
-    std::unique_ptr<SA> monoFreqA, monoAmtA, toneAmtA, toneMaxA, harshMaxA, ceilA;
-    std::unique_ptr<CA> styleA;
+    hifi::Visualizer visualizer { proc };
+    hifi::VUMeter vuLeft { "LEFT" }, vuRight { "RIGHT" };
+    hifi::VfdDisplay lufsIntDisplay { "INTEGRATED LUFS" }, lufsShortDisplay { "SHORT-TERM LUFS" },
+                     truePeakDisplay { "TRUE PEAK dBTP" }, grDisplay { "GAIN REDUCTION dB" };
 
-    juce::Rectangle<int> issuesArea, bandsArea, controlsArea;
+    std::array<hifi::Knob, 20> knobs;
+    std::array<juce::Rectangle<int>, 20> knobCells;
+    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> sliderAttachments;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> releaseAutoAttachment;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MixDoctorEditor)
+    struct Sweep { juce::RangedAudioParameter* param; float from, to; double delay; };
+    std::vector<Sweep> sweeps;
+    double sweepStart = 0;
+
+    juce::String shownPreset;
+    int shownPresetCount = -1;
+    juce::uint32 lastSlowUpdate = 0;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DnBMixDoctorEditor)
 };

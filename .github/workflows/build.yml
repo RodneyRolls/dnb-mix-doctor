@@ -1,0 +1,47 @@
+name: Build DnB Mix Doctor
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+            configure: cmake -B build -A x64
+            targets: DnBMixDoctor_VST3 DnBMixDoctor_Standalone
+          - os: macos-latest
+            name: macOS
+            configure: cmake -B build -G Xcode
+            targets: DnBMixDoctor_VST3 DnBMixDoctor_AU DnBMixDoctor_Standalone
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: ${{ matrix.configure }}
+
+      - name: Build plugin
+        run: cmake --build build --config Release --target ${{ matrix.targets }}
+
+      - name: Build and run DSP tests
+        shell: bash
+        run: |
+          cmake --build build --config Release --target DnBMixDoctorTests
+          exe=$(find build -type f \( -name DnBMixDoctorTests.exe -o -name DnBMixDoctorTests \) -perm -u+x | head -1)
+          "$exe"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: DnB-Mix-Doctor-${{ matrix.name }}
+          path: |
+            build/DnBMixDoctor_artefacts/Release/VST3
+            build/DnBMixDoctor_artefacts/Release/AU
+            build/DnBMixDoctor_artefacts/Release/Standalone
+          if-no-files-found: error
