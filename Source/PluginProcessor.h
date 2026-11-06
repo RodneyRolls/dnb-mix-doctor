@@ -51,7 +51,7 @@ public:
     struct Meters
     {
         std::atomic<float> lufsIntegrated { -100 }, lufsShortTerm { -100 }, lufsMomentary { -100 };
-        std::atomic<float> truePeakDb { -100 }, glueGrDb { 0 }, limiterGrDb { 0 }, autoGainDb { 0 }, cpuPercent { 0 };
+        std::atomic<float> truePeakDb { -100 }, glueGrDb { 0 }, limiterGrDb { 0 }, autoGainDb { 0 }, clipDb { 0 }, cpuPercent { 0 };
         std::atomic<bool> resetRequested { false };
     } meters;
 

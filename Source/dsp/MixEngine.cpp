@@ -81,8 +81,9 @@ namespace mcdsp
         oversampler->initProcessing ((size_t) maxBlock);
 
         lookahead = std::max (8, (int) std::lround (0.0015 * sr));
-        limiterBase.prepare (sr, lookahead, true);
-        limiterOs.prepare (sr * 4.0, lookahead * 4 + 1, false);   // (4L+1)-1 = 4L samples at 4x == L at 1x
+        // V2 maximiser: fast program-dependent release (25 ms for peaks, 250 ms when limiting is sustained)
+        limiterBase.prepare (sr, lookahead, true, 0.025, 0.25);
+        limiterOs.prepare (sr * 4.0, lookahead * 4 + 1, false, 0.025, 0.25);   // (4L+1)-1 = 4L samples at 4x == L at 1x
         dcBase.setup (sr);
         dcOs.setup (sr * 4.0);
 
@@ -453,6 +454,32 @@ namespace mcdsp
             }
     }
 
+    float MixEngine::clipThresholdDb (const EngineParams& p) noexcept
+    {
+        // The louder the target, the closer the clipper sits to the ceiling: at -12 LUFS it only touches
+        // peaks 3 dB over the ceiling (the limiter does the work); from -5 LUFS up it shaves every peak
+        // that would push the limiter by more than ~0.3 dB, which is where the extra loudness comes from.
+        const float head = std::clamp (juce::jmap (p.loudnessLufs, -12.0f, -5.0f, 3.0f, 0.3f), 0.3f, 3.0f);
+        return p.ceilingDb + head;
+    }
+
+    float MixEngine::softClip (float* const* d, int numCh, int n, float threshold) noexcept
+    {
+        // linear below 60 % of the threshold, then a tanh knee that approaches (never exceeds) the threshold
+        const float knee = 0.6f * threshold, range = threshold - knee;
+        float deepest = 0.0f;
+        for (int ch = 0; ch < numCh; ++ch)
+            for (int i = 0; i < n; ++i)
+            {
+                const float x = d[ch][i], a = std::abs (x);
+                if (a <= knee) continue;
+                const float y = knee + range * std::tanh ((a - knee) / range);
+                deepest = std::max (deepest, a / y);
+                d[ch][i] = std::copysign (y, x);
+            }
+        return -gainToDb (std::max (1.0f, deepest));
+    }
+
     void MixEngine::updateAutoGain (const EngineParams& p, int n) noexcept
     {
         const float st = preLoud.getShortTerm();
@@ -463,8 +490,8 @@ namespace mcdsp
             const float outInt = postLoud.getIntegrated();
             if (outInt > -70.0f)   // slow closed-loop trim so the *output* lands on target despite limiting
                 loudCorrection = std::clamp (loudCorrection + std::clamp (p.loudnessLufs - outInt, -1.0f, 1.0f) * 0.5f * (float) (n / sr),
-                                             -6.0f, 6.0f);
-            const float target = std::clamp (p.loudnessLufs - measured + loudCorrection, -12.0f, 20.0f);
+                                             -9.0f, 9.0f);
+            const float target = std::clamp (p.loudnessLufs - measured + loudCorrection, -12.0f, 30.0f);
             autoGainCur += (target - autoGainCur) * (1.0f - onePoleCoef (0.4, sr / n));
         }
         autoGainDb = autoGainCur;
@@ -494,6 +521,7 @@ namespace mcdsp
         updateAutoGain (p, n);
         const float gainEnd = dbToGain (autoGainDb);
         const float ceiling = dbToGain (p.ceilingDb);
+        const float clipThreshold = dbToGain (clipThresholdDb (p));
         const float sat = p.saturate * p.fix;
 
         if (activeOs)
@@ -506,6 +534,7 @@ namespace mcdsp
             for (int ch = 0; ch < numCh; ++ch)
                 for (int i = 0; i < un; ++i) upPtrs[ch][i] = dcOs.process (ch, upPtrs[ch][i]);
             applyGainRamp (upPtrs, numCh, un, gainStart, gainEnd);
+            clipDb = softClip (upPtrs, numCh, un, clipThreshold);   // alias-free at 4x
             limiterGrDb = limiterOs.process (upPtrs, numCh, un, ceiling * 0.989f);   // ~0.1 dB margin for the decimator
             oversampler->processSamplesDown (block);
             limiterGrDb = std::min (limiterGrDb, limiterOsCatch.process (io, numCh, n, ceiling));
@@ -517,6 +546,7 @@ namespace mcdsp
             for (int ch = 0; ch < numCh; ++ch)
                 for (int i = 0; i < n; ++i) io[ch][i] = dcBase.process (ch, io[ch][i]);
             applyGainRamp (io, numCh, n, gainStart, gainEnd);
+            clipDb = softClip (io, numCh, n, clipThreshold);
             limiterGrDb = limiterBase.process (io, numCh, n, ceiling);
             padDelayBase.processBlock (io, numCh, n);
         }

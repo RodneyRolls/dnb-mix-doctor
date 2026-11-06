@@ -80,7 +80,7 @@ namespace params
         addFloat (release, "Release", skewed (10.0f, 1000.0f, 150.0f), 150.0f, "ms", ms);
         addFloat (width,   "Width",   { 0.0f, 200.0f, 0.1f }, 100.0f, "%", pct);
         amount   (saturate, "Saturate", 15.0f);
-        addFloat (loudness, "Loudness", { -14.0f, -4.0f, 0.1f }, -9.0f, "LUFS",
+        addFloat (loudness, "Loudness", { -14.0f, -3.0f, 0.1f }, -7.0f, "LUFS",
                   [] (float v, int) { return String (v, 1) + " LUFS"; });
         addFloat (ceiling,  "Ceiling",  { -3.0f, 0.0f, 0.01f }, -1.0f, "dBTP",
                   [] (float v, int) { return String (v, 2) + " dBTP"; });
@@ -90,7 +90,7 @@ namespace params
 
         p.push_back (std::make_unique<AudioParameterBool> (ParameterID { releaseAuto, version }, "Release Auto", true));
         p.push_back (std::make_unique<AudioParameterBool> (ParameterID { bypass, version }, "Bypass", false));
-        p.push_back (std::make_unique<AudioParameterBool> (ParameterID { oversample, version }, "4x Oversampling", false,
+        p.push_back (std::make_unique<AudioParameterBool> (ParameterID { oversample, version }, "4x Oversampling", true,
                          AudioParameterBoolAttributes().withAutomatable (false)));
 
         return { p.begin(), p.end() };

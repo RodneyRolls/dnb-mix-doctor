@@ -1,9 +1,9 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "PluginProcessor.h"
-#include "ui/HiFiLookAndFeel.h"
+#include "ui/Theme.h"
 #include "ui/Widgets.h"
-#include "ui/VUMeter.h"
+#include "ui/LevelGauge.h"
 #include "ui/Visualizer.h"
 
 /** 1300 x 700 design-size editor. Everything lives in `panel`, which is scaled with an affine transform
@@ -17,7 +17,7 @@ public:
     ~DnBMixDoctorEditor() override;
 
     void resized() override;
-    void paint (juce::Graphics& g) override { g.fillAll (hifi::colours::walnutDark); }
+    void paint (juce::Graphics& g) override { g.fillAll (mcui::colours::bg0); }
 
 private:
     //==============================================================================
@@ -44,28 +44,28 @@ private:
     void updateSweep();
 
     DnBMixDoctorProcessor& proc;
-    hifi::LookAndFeel lnf;
+    mcui::LookAndFeel lnf;
     Panel panel { *this };
 
-    using Icon = hifi::ChromeButton::Icon;
-    hifi::ChromeButton powerButton { "Power", Icon::power, true },
-                       autoFixButton { "Auto-Fix", Icon::bolt, true },
-                       prevButton { "Previous preset", Icon::left, false },
-                       nextButton { "Next preset", Icon::right, false },
-                       starButton { "Favourite", Icon::star, false },
-                       menuButton { "Menu", Icon::menu, false },
-                       folderButton { "Preset browser", Icon::folder, false },
-                       abButton { "A/B", Icon::none, true },
-                       releaseAutoButton { "Auto release", Icon::none, true };
+    using Icon = mcui::IconButton::Icon;
+    mcui::IconButton powerButton { "Power", Icon::power, true },
+                     autoFixButton { "Auto-Fix", Icon::bolt, true },
+                     prevButton { "Previous preset", Icon::left, false },
+                     nextButton { "Next preset", Icon::right, false },
+                     starButton { "Favourite", Icon::star, false },
+                     menuButton { "Menu", Icon::menu, false },
+                     folderButton { "Preset browser", Icon::folder, false },
+                     abButton { "A/B", Icon::none, true },
+                     releaseAutoButton { "Auto release", Icon::none, true };
     juce::ComboBox presetBox;
-    hifi::VfdDisplay cpuDisplay { {} };
+    mcui::Readout cpuDisplay { {}, "% CPU" };
 
-    hifi::Visualizer visualizer { proc };
-    hifi::VUMeter vuLeft { "LEFT" }, vuRight { "RIGHT" };
-    hifi::VfdDisplay lufsIntDisplay { "INTEGRATED LUFS" }, lufsShortDisplay { "SHORT-TERM LUFS" },
-                     truePeakDisplay { "TRUE PEAK dBTP" }, grDisplay { "GAIN REDUCTION dB" };
+    mcui::Visualizer visualizer { proc };
+    mcui::LevelGauge gaugeLeft { "Left" }, gaugeRight { "Right" };
+    mcui::Readout lufsIntDisplay { "Integrated", "LUFS" }, lufsShortDisplay { "Short-term", "LUFS" },
+                  truePeakDisplay { "True peak", "dBTP" }, grDisplay { "Gain reduction", "dB" };
 
-    std::array<hifi::Knob, 20> knobs;
+    std::array<mcui::Knob, 20> knobs;
     std::array<juce::Rectangle<int>, 20> knobCells;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> sliderAttachments;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> releaseAutoAttachment;

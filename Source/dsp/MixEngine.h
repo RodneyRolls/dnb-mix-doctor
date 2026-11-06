@@ -11,8 +11,8 @@ namespace mcdsp
     {
         float inputDb = 0, subMonoHz = 100, subTight = 0.2f, kickBass = 0.2f, punch = 0.2f, snap = 0.15f,
               mud = 0.25f, reese = 0.2f, harsh = 0.25f, air = 0.2f, glue = 0.25f, attackMs = 10, releaseMs = 150,
-              width = 1.0f, saturate = 0.15f, loudnessLufs = -9, ceilingDb = -1, fix = 1.0f, mix = 1.0f, outputDb = 0;
-        bool releaseAuto = true, bypass = false, oversample = false;
+              width = 1.0f, saturate = 0.15f, loudnessLufs = -7, ceilingDb = -1, fix = 1.0f, mix = 1.0f, outputDb = 0;
+        bool releaseAuto = true, bypass = false, oversample = true;
     };
 
     /** The complete DnB Mix Doctor signal chain:
@@ -42,7 +42,7 @@ namespace mcdsp
         void resetLoudness() noexcept { preLoud.resetIntegrated(); postLoud.resetIntegrated(); loudCorrection = 0; }
 
         // meter values from the last block (audio thread writes, processor publishes)
-        float glueGrDb = 0, limiterGrDb = 0, autoGainDb = 0, dynamicEqDb = 0;
+        float glueGrDb = 0, limiterGrDb = 0, autoGainDb = 0, dynamicEqDb = 0, clipDb = 0;
 
     private:
         static constexpr int sub = 32;   // control-rate sub-block
@@ -51,6 +51,8 @@ namespace mcdsp
         void outputStage (float* const* io, int numCh, int n, const EngineParams& p) noexcept;
         void saturate (float* const* d, int numCh, int n, float amount) noexcept;
         void updateAutoGain (const EngineParams& p, int n) noexcept;
+        static float clipThresholdDb (const EngineParams& p) noexcept;
+        static float softClip (float* const* d, int numCh, int n, float threshold) noexcept;
         void configureOutputModes();
 
         double sr = 48000.0;

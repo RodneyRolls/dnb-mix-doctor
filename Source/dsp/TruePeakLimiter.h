@@ -17,11 +17,18 @@ namespace mcdsp
     class TruePeakLimiter
     {
     public:
-        void prepare (double sampleRate, int lookaheadSamples, bool useTruePeak, double releaseSeconds = 0.06)
+        /** With slowReleaseSeconds > 0 the release is program dependent: short peaks recover with the fast
+            release (loud, punchy), while sustained limiting recovers quickly only back to the sustained
+            gain level and then slowly to unity (no pumping/distortion on dense material). */
+        void prepare (double sampleRate, int lookaheadSamples, bool useTruePeak, double releaseSeconds = 0.06,
+                      double slowReleaseSeconds = 0.0)
         {
             L = std::max (1, lookaheadSamples);
             tp = useTruePeak;
             relCoef = onePoleCoef (releaseSeconds, sampleRate);
+            adaptive = slowReleaseSeconds > 0.0;
+            relSlowCoef = onePoleCoef (std::max (releaseSeconds, slowReleaseSeconds), sampleRate);
+            susCoef = onePoleCoef (std::max (releaseSeconds, slowReleaseSeconds) * 1.5, sampleRate);
             audioDelay.prepare (getLatency() + 1);
             audioDelay.setDelay (getLatency());
             dqVal.assign ((size_t) L + 2, 1.0f);
@@ -41,7 +48,7 @@ namespace mcdsp
             boxPos = 0;
             head = tail = 0;
             count = 0;
-            hr = 1.0f;
+            hr = sus = 1.0f;
         }
 
         /** In-place. Returns the deepest gain reduction in this block in dB (<= 0). */
@@ -70,7 +77,15 @@ namespace mcdsp
                 const float h = dqVal[(size_t) head];
                 ++count;
 
-                hr = std::min (h, 1.0f - (1.0f - hr) * relCoef);
+                if (adaptive)
+                {
+                    sus = hr + (sus - hr) * susCoef;   // sustained gain-reduction level
+                    const float released = hr < sus - 1.0e-4f ? sus - (sus - hr) * relCoef        // fast back to the sustained level
+                                                              : 1.0f - (1.0f - hr) * relSlowCoef; // then slowly to unity
+                    hr = std::min (h, released);
+                }
+                else
+                    hr = std::min (h, 1.0f - (1.0f - hr) * relCoef);
 
                 boxSum += (double) hr - (double) box[(size_t) boxPos];
                 box[(size_t) boxPos] = hr;
@@ -97,7 +112,8 @@ namespace mcdsp
     private:
         int L = 1;
         bool tp = true;
-        float relCoef = 0.999f, hr = 1.0f;
+        float relCoef = 0.999f, relSlowCoef = 0.9999f, susCoef = 0.9999f, hr = 1.0f, sus = 1.0f;
+        bool adaptive = false;
         TruePeakDetector det;
         DelayLine audioDelay;
         std::vector<float> dqVal;

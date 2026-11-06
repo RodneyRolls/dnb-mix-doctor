@@ -1,15 +1,15 @@
 #include "PluginEditor.h"
 
 using namespace juce;
-namespace col = hifi::colours;
+namespace col = mcui::colours;
 
 namespace
 {
     // ---- design-space layout (1300 x 700)
-    constexpr int cheek = 26;
-    const Rectangle<int> plateArea { cheek, 0, DnBMixDoctorEditor::designW - 2 * cheek, DnBMixDoctorEditor::designH };
+    const Rectangle<int> headerArea { 24, 6, 1252, 46 };
     const Rectangle<int> visArea { 236, 100, 828, 272 };
-    constexpr int knobsX = 40, knobsW = 1220, rowY[2] = { 382, 530 }, rowH = 146;
+    const Rectangle<int> sectionArea[2] = { { 24, 378, 1252, 148 }, { 24, 530, 1252, 148 } };
+    constexpr int knobsX = 40, knobsW = 1220, rowY[2] = { 384, 536 }, rowH = 140;
     constexpr int favouriteIdOffset = 1000;
 
     float easeInOut (float t) { return t < 0.5f ? 4.0f * t * t * t : 1.0f - std::pow (-2.0f * t + 2.0f, 3.0f) * 0.5f; }
@@ -27,7 +27,7 @@ DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
     for (auto* b : { &powerButton, &autoFixButton, &prevButton, &nextButton, &starButton, &menuButton,
                      &folderButton, &abButton, &releaseAutoButton })
         panel.addAndMakeVisible (b);
-    for (auto* c : std::initializer_list<Component*> { &presetBox, &cpuDisplay, &visualizer, &vuLeft, &vuRight,
+    for (auto* c : std::initializer_list<Component*> { &presetBox, &cpuDisplay, &visualizer, &gaugeLeft, &gaugeRight,
                                                         &lufsIntDisplay, &lufsShortDisplay, &truePeakDisplay, &grDisplay })
         panel.addAndMakeVisible (c);
 
@@ -44,8 +44,8 @@ DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
         sliderAttachments.push_back (std::make_unique<AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, id, k));
         if (auto* param = proc.apvts.getParameter (id))
             k.setDoubleClickReturnValue (true, (double) param->convertFrom0to1 (param->getDefaultValue()));
-        k.setPopupDisplayEnabled (true, false, &panel, 900);
         k.setTitle (params::knobLabels[i]);
+        k.setBipolar (id == params::input || id == params::output || id == params::width);
     }
     releaseAutoAttachment = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, params::releaseAuto, releaseAutoButton);
 
@@ -77,20 +77,23 @@ DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
     };
 
     cpuDisplay.setValueText ("0.0");
+    cpuDisplay.setCardStyle (false);
     lufsIntDisplay.onClick = [this] { proc.meters.resetRequested = true; };
     truePeakDisplay.onClick = [this] { proc.meters.resetRequested = true; };
 
     visualizer.onFrame = [this] (double dt)
     {
-        vuLeft.setLevel (visualizer.getRmsL());
-        vuRight.setLevel (visualizer.getRmsR());
-        vuLeft.tick (dt);
-        vuRight.tick (dt);
+        const auto mood = visualizer.getMoodColour();
+        for (auto* gauge : { &gaugeLeft, &gaugeRight }) gauge->setAccent (mood);
+        gaugeLeft.setLevel (visualizer.getRmsL());
+        gaugeRight.setLevel (visualizer.getRmsR());
+        gaugeLeft.tick (dt);
+        gaugeRight.tick (dt);
     };
 
     layout();
     refreshPresetBox();
-    vuLeft.referenceDbfs = vuRight.referenceDbfs = proc.apvts.getRawParameterValue (params::loudness)->load();
+    gaugeLeft.referenceDbfs = gaugeRight.referenceDbfs = proc.apvts.getRawParameterValue (params::loudness)->load();
 
     // resizing: aspect ratio locked, whole panel scaled
     setResizable (true, true);
@@ -121,28 +124,28 @@ void DnBMixDoctorEditor::resized()
 
 void DnBMixDoctorEditor::layout()
 {
-    // top bar
-    powerButton.setBounds (44, 10, 58, 36);
-    autoFixButton.setBounds (108, 10, 58, 36);
-    prevButton.setBounds (452, 10, 40, 36);
-    presetBox.setBounds (498, 12, 304, 32);
-    nextButton.setBounds (808, 10, 40, 36);
-    starButton.setBounds (854, 10, 40, 36);
-    cpuDisplay.setBounds (1112, 12, 90, 32);
-    menuButton.setBounds (1210, 10, 50, 36);
+    // header bar
+    powerButton.setBounds (34, 11, 48, 36);
+    autoFixButton.setBounds (88, 11, 48, 36);
+    prevButton.setBounds (450, 11, 36, 36);
+    presetBox.setBounds (492, 11, 316, 36);
+    nextButton.setBounds (814, 11, 36, 36);
+    starButton.setBounds (856, 11, 36, 36);
+    cpuDisplay.setBounds (1100, 13, 104, 32);
+    menuButton.setBounds (1218, 11, 48, 36);
 
-    // second row
-    folderButton.setBounds (44, 54, 58, 36);
-    abButton.setBounds (1196, 54, 64, 36);
+    // title row
+    folderButton.setBounds (40, 60, 44, 32);
+    abButton.setBounds (1212, 60, 48, 32);
 
-    // visualiser + meters
+    // display + meters
     visualizer.setBounds (visArea);
-    vuLeft.setBounds (40, 100, 188, 142);
-    vuRight.setBounds (1072, 100, 188, 142);
-    lufsIntDisplay.setBounds (40, 246, 188, 60);
-    lufsShortDisplay.setBounds (40, 310, 188, 60);
-    truePeakDisplay.setBounds (1072, 246, 188, 60);
-    grDisplay.setBounds (1072, 310, 188, 60);
+    gaugeLeft.setBounds (40, 100, 188, 142);
+    gaugeRight.setBounds (1072, 100, 188, 142);
+    lufsIntDisplay.setBounds (40, 248, 188, 60);
+    lufsShortDisplay.setBounds (40, 312, 188, 60);
+    truePeakDisplay.setBounds (1072, 248, 188, 60);
+    grDisplay.setBounds (1072, 312, 188, 60);
 
     // 2 x 10 knobs, label above each knob
     const int cellW = knobsW / 10;
@@ -154,7 +157,7 @@ void DnBMixDoctorEditor::layout()
         knobs[(size_t) i].setBounds (cell.withTrimmedTop (18).withHeight (112).withSizeKeepingCentre (112, 112));
     }
     const auto relCell = knobCells[12];
-    releaseAutoButton.setBounds (relCell.getCentreX() - 32, relCell.getBottom() - 19, 64, 20);
+    releaseAutoButton.setBounds (relCell.getCentreX() - 26, relCell.getBottom() - 21, 52, 19);
 }
 
 //==============================================================================
@@ -165,99 +168,72 @@ void DnBMixDoctorEditor::Panel::renderBackground (float scale)
     background = Image (Image::RGB, roundToInt (W * scale), roundToInt (H * scale), true);
     Graphics g (background);
     g.addTransform (AffineTransform::scale (scale));
-    Random rng (1975);
 
-    // ---- walnut side cheeks
-    for (int side = 0; side < 2; ++side)
-    {
-        const auto r = Rectangle<float> (side == 0 ? 0.0f : (float) (W - cheek), 0.0f, (float) cheek, (float) H);
-        ColourGradient wood (col::walnutDark, r.getX(), 0, col::walnutDark, r.getRight(), 0, false);
-        wood.addColour (0.25, col::walnutLight);
-        wood.addColour (0.6, col::walnut);
-        g.setGradientFill (wood);
-        g.fillRect (r);
-        for (int i = 0; i < 70; ++i)
-        {
-            Path grain;
-            float x = r.getX() + rng.nextFloat() * r.getWidth();
-            const float freq = 0.004f + rng.nextFloat() * 0.01f, amp = 0.4f + rng.nextFloat() * 1.6f, ph = rng.nextFloat() * 6.0f;
-            grain.startNewSubPath (x, 0);
-            for (float y = 0; y <= (float) H; y += 8.0f)
-                grain.lineTo (jlimit (r.getX(), r.getRight(), x + std::sin (y * freq + ph) * amp), y);
-            g.setColour ((rng.nextBool() ? Colour (0xff1a0d05) : Colour (0xff9a6440)).withAlpha (0.10f + rng.nextFloat() * 0.18f));
-            g.strokePath (grain, PathStrokeType (0.5f + rng.nextFloat() * 1.2f));
-        }
-        ColourGradient varnish (Colours::white.withAlpha (0.10f), r.getX() + r.getWidth() * 0.3f, 0,
-                                Colours::transparentWhite, r.getRight(), 0, false);
-        g.setGradientFill (varnish);
-        g.fillRect (r);
-    }
-
-    // ---- brushed champagne aluminium faceplate
-    const auto plate = plateArea.toFloat();
-    ColourGradient base (col::panelLight, 0, 0, col::panelDark, 0, (float) H, false);
-    base.addColour (0.45, col::panel);
+    // ---- deep graphite backdrop with soft coloured light
+    ColourGradient base (col::bg1, 0, 0, col::bg0, 0, (float) H, false);
     g.setGradientFill (base);
-    g.fillRect (plate);
-    for (float y = 0; y < (float) H; y += 0.5f)
-        for (int k = 0; k < 3; ++k)
-        {
-            const float x0 = plate.getX() + rng.nextFloat() * plate.getWidth();
-            const float len = 40.0f + rng.nextFloat() * 520.0f;
-            g.setColour ((rng.nextBool() ? Colours::white : Colour (0xff5a4e36)).withAlpha (0.025f + rng.nextFloat() * 0.05f));
-            g.fillRect (x0, y, jmin (len, plate.getRight() - x0), 0.5f);
-        }
-    for (float cx : { 0.28f, 0.72f })
+    g.fillAll();
+    mcui::drawGlow (g, { 140.0f, 40.0f }, 520.0f, col::cyan.withAlpha (0.07f));
+    mcui::drawGlow (g, { 1180.0f, 660.0f }, 600.0f, col::violet.withAlpha (0.08f));
+    mcui::drawGlow (g, { 650.0f, 240.0f }, 520.0f, col::violet.withAlpha (0.04f));
+
+    // ---- surfaces
+    mcui::drawCard (g, headerArea.toFloat(), 14.0f);
+    for (auto& s : sectionArea)
+        mcui::drawCard (g, s.toFloat(), 16.0f);
+
+    // ---- header captions
+    mcui::drawCaption (g, "Auto-fix", { 142.0f, 11.0f, 80.0f, 36.0f });
+    mcui::drawCaption (g, "Preset", { 380.0f, 11.0f, 62.0f, 36.0f }, Justification::centredRight);
+    g.setColour (Colours::white.withAlpha (0.06f));
+    g.fillRect (1088.0f, 16.0f, 1.0f, 26.0f);
+
+    // ---- title: wordmark + V2 badge
     {
-        ColourGradient sheen (Colours::white.withAlpha (0.09f), plate.getX() + plate.getWidth() * cx, 0,
-                              Colours::transparentWhite, plate.getX() + plate.getWidth() * (cx + 0.18f), 0, false);
-        g.setGradientFill (sheen);
-        g.fillRect (plate);
+        const auto titleFont = mcui::font (25.0f, true).withExtraKerningFactor (0.10f);
+        const String title ("DnB MIX DOCTOR");
+        const float tw = mcui::textWidth (titleFont, title);
+        const float badgeW = 38.0f, gap = 12.0f;
+        const float x0 = ((float) W - (tw + gap + badgeW)) * 0.5f;
+        g.setFont (titleFont);
+        g.setColour (col::text);
+        g.drawText (title, Rectangle<float> (x0, 56.0f, tw + 4.0f, 30.0f), Justification::centredLeft, false);
+
+        const auto badge = Rectangle<float> (x0 + tw + gap, 60.0f, badgeW, 22.0f);
+        mcui::drawGlow (g, badge.getCentre(), 34.0f, col::violet.withAlpha (0.35f));
+        g.setGradientFill (mcui::accentGradient (badge.getTopLeft(), badge.getBottomRight()));
+        g.fillRoundedRectangle (badge, 11.0f);
+        g.setColour (Colours::white);
+        g.setFont (mcui::font (13.0f, true));
+        g.drawText ("V2", badge, Justification::centred, false);
+
+        mcui::drawCaption (g, "Drum & bass mix repair  +  loudness maximizer", { 0.0f, 84.0f, (float) W, 12.0f },
+                           Justification::centred, col::textFaint, 9.0f);
     }
-    g.setColour (Colours::black.withAlpha (0.45f));
-    g.drawVerticalLine (cheek, 0, (float) H);
-    g.drawVerticalLine (W - cheek - 1, 0, (float) H);
-    g.setColour (Colours::white.withAlpha (0.5f));
-    g.drawHorizontalLine (0, plate.getX(), plate.getRight());
+    mcui::drawCaption (g, "Presets", { 92.0f, 60.0f, 80.0f, 32.0f });
+    mcui::drawCaption (g, "Compare", { 1120.0f, 60.0f, 84.0f, 32.0f }, Justification::centredRight);
 
-    // ---- engraved section rules
-    auto rule = [&] (float y, float x0, float x1)
-    {
-        g.setColour (Colours::black.withAlpha (0.35f)); g.drawHorizontalLine ((int) y, x0, x1);
-        g.setColour (Colours::white.withAlpha (0.5f));  g.drawHorizontalLine ((int) y + 1, x0, x1);
-    };
-    rule (50.0f, 40.0f, 1260.0f);
-    rule (377.0f, 40.0f, 1260.0f);
-    rule (528.0f, 40.0f, 1260.0f);
-    rule (677.0f, 40.0f, 1260.0f);
-
-    // ---- title
-    hifi::drawEngravedText (g, "DNB MIX DOCTOR", { 0.0f, 52.0f, (float) W, 32.0f },
-                            hifi::labelFont (27.0f, true).withExtraKerningFactor (0.18f));
-    hifi::drawEngravedText (g, "DRUM & BASS MIX REPAIR SYSTEM  -  MODEL MD-1", { 0.0f, 83.0f, (float) W, 12.0f },
-                            hifi::labelFont (8.5f).withExtraKerningFactor (0.25f));
-
-    // ---- captions
-    hifi::drawEngravedText (g, "CPU %", { 1050.0f, 12.0f, 58.0f, 32.0f }, hifi::labelFont (10.0f), Justification::centredRight);
-    hifi::drawEngravedText (g, "PRESET", { 380.0f, 12.0f, 66.0f, 32.0f }, hifi::labelFont (10.0f), Justification::centredRight);
-    hifi::drawEngravedText (g, "PRESETS", { 106.0f, 54.0f, 80.0f, 36.0f }, hifi::labelFont (9.0f), Justification::centredLeft);
-    hifi::drawEngravedText (g, "COMPARE", { 1110.0f, 54.0f, 80.0f, 36.0f }, hifi::labelFont (9.0f), Justification::centredRight);
-
-    // ---- knob labels (engraved, centred above each knob)
+    // ---- knob labels, centred above each knob
     for (int i = 0; i < 20; ++i)
-        hifi::drawEngravedText (g, params::knobLabels[i], owner.knobCells[(size_t) i].withHeight (16).toFloat(),
-                                hifi::labelFont (11.0f), Justification::centred);
+        mcui::drawCaption (g, params::knobLabels[i], owner.knobCells[(size_t) i].withHeight (16).toFloat(),
+                           Justification::centred, col::textDim, 10.0f);
 
     // ---- developer badge (bottom-left) and version (bottom-right)
-    auto badge = Rectangle<float> (40.0f, 681.0f, 118.0f, 15.0f);
-    ColourGradient bg (Colour (0xff2a2622), 0, badge.getY(), Colour (0xff0d0b09), 0, badge.getBottom(), false);
-    g.setGradientFill (bg);
-    g.fillRoundedRectangle (badge, 3.0f);
-    g.setColour (Colour (0xffd9d4c8));
-    g.drawRoundedRectangle (badge.reduced (0.5f), 3.0f, 1.0f);
-    g.setFont (hifi::labelFont (8.5f).withExtraKerningFactor (0.2f));
-    g.drawText ("MOD CON DSP", badge, Justification::centred);
-    hifi::drawEngravedText (g, "1.0", { 1200.0f, 681.0f, 60.0f, 15.0f }, hifi::labelFont (9.0f), Justification::centredRight);
+    {
+        const auto badgeFont = mcui::font (9.5f, true).withExtraKerningFactor (0.16f);
+        const String maker ("MOD CON DSP");
+        auto badge = Rectangle<float> (40.0f, 683.0f, mcui::textWidth (badgeFont, maker) + 26.0f, 14.0f);
+        g.setColour (Colours::white.withAlpha (0.05f));
+        g.fillRoundedRectangle (badge, 7.0f);
+        g.setColour (Colours::white.withAlpha (0.10f));
+        g.drawRoundedRectangle (badge.reduced (0.5f), 7.0f, 1.0f);
+        g.setGradientFill (mcui::accentGradient (badge.getTopLeft(), badge.getTopRight()));
+        g.fillEllipse (Rectangle<float> (5.0f, 5.0f).withCentre ({ badge.getX() + 9.0f, badge.getCentreY() }));
+        g.setColour (col::textDim);
+        g.setFont (badgeFont);
+        g.drawText (maker, badge.withTrimmedLeft (16.0f), Justification::centredLeft, false);
+    }
+    mcui::drawCaption (g, "v2.0", { 1180.0f, 683.0f, 64.0f, 14.0f }, Justification::centredRight, col::textFaint, 9.5f);
 }
 
 void DnBMixDoctorEditor::Panel::paint (Graphics& g)
@@ -311,10 +287,12 @@ void DnBMixDoctorEditor::timerCallback()
     lufsIntDisplay.setValueText (fmtMeter (m.lufsIntegrated.load()));
     lufsShortDisplay.setValueText (fmtMeter (m.lufsShortTerm.load()));
     truePeakDisplay.setValueText (fmtMeter (m.truePeakDb.load()));
-    grDisplay.setValueText (String (jmin (0.0f, m.glueGrDb.load() + m.limiterGrDb.load()), 1));
+    grDisplay.setValueText (String (jmin (0.0f, m.glueGrDb.load() + m.limiterGrDb.load() + m.clipDb.load()), 1));
+    const float ceilingDb = proc.apvts.getRawParameterValue (params::ceiling)->load();
+    truePeakDisplay.setValueColour (m.truePeakDb.load() > ceilingDb + 0.05f ? col::bad : col::text);
 
-    // 0 VU == the LOUDNESS target, so a needle sitting on 0 means "on target"
-    vuLeft.referenceDbfs = vuRight.referenceDbfs = proc.apvts.getRawParameterValue (params::loudness)->load();
+    // gauges read 0 dB when the level sits on the LOUDNESS target
+    gaugeLeft.referenceDbfs = gaugeRight.referenceDbfs = proc.apvts.getRawParameterValue (params::loudness)->load();
 
     abButton.setText (proc.isOnB() ? "B" : "A");
     abButton.setToggleState (proc.isOnB(), dontSendNotification);
@@ -412,7 +390,7 @@ void DnBMixDoctorEditor::showMainMenu()
 {
     PopupMenu menu;
     const bool os = proc.apvts.getParameter (params::oversample)->getValue() > 0.5f;
-    menu.addSectionHeader ("DnB Mix Doctor 1.0 - Mod Con DSP");
+    menu.addSectionHeader ("DnB Mix Doctor V2  2.0  -  Mod Con DSP");
     menu.addItem (1, "4x oversampling (saturation + limiter)", true, os);
     menu.addItem (2, "Reset loudness / true-peak meters");
     menu.addItem (3, String ("Switch to ") + (proc.isOnB() ? "A" : "B") + " (compare)");

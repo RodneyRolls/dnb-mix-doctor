@@ -1,12 +1,12 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "HiFiLookAndFeel.h"
+#include "Theme.h"
 
-namespace hifi
+namespace mcui
 {
     //==============================================================================
-    /** Rotary knob: vertical drag, shift-drag for fine control, wheel, double-click reset,
-        value bubble while dragging (bubble appearance comes from the LookAndFeel). */
+    /** Rotary knob: vertical drag, shift-drag for fine control, wheel and double-click reset.
+        The current value is drawn inside the knob by the LookAndFeel. */
     class Knob : public juce::Slider
     {
     public:
@@ -15,6 +15,8 @@ namespace hifi
             setRotaryParameters (juce::MathConstants<float>::pi * 1.25f, juce::MathConstants<float>::pi * 2.75f, true);
             setScrollWheelEnabled (true);
         }
+
+        void setBipolar (bool b) { getProperties().set ("bipolar", b); repaint(); }
 
         void mouseDown (const juce::MouseEvent& e) override
         {
@@ -32,93 +34,81 @@ namespace hifi
             setValue (proportionOfLengthToValue (prop), juce::sendNotificationSync);
         }
 
+        void mouseEnter (const juce::MouseEvent& e) override { juce::Slider::mouseEnter (e); repaint(); }
+        void mouseExit (const juce::MouseEvent& e) override  { juce::Slider::mouseExit (e); repaint(); }
+
     private:
         float lastY = 0;
     };
 
     //==============================================================================
-    /** Chunky chrome-edged rectangular push button with an optional amber pilot lamp. */
-    class ChromeButton : public juce::Button
+    /** Rounded flat button with a vector icon or text, an optional status LED and a progress bar. */
+    class IconButton : public juce::Button
     {
     public:
         enum class Icon { none, power, bolt, left, right, star, menu, folder };
 
-        ChromeButton (const juce::String& name, Icon i, bool hasLamp)
-            : juce::Button (name), icon (i), lamp (hasLamp) {}
+        IconButton (const juce::String& name, Icon i, bool hasLed)
+            : juce::Button (name), icon (i), led (hasLed) {}
 
-        void setText (const juce::String& t) { text = t; repaint(); }
+        void setText (const juce::String& t) { if (t != text) { text = t; repaint(); } }
         void setProgress (float p)           { if (p != progress) { progress = p; repaint(); } }
-        void setBlink (bool b)               { blink = b; repaint(); }
+        void setBlink (bool b)               { if (b != blink) { blink = b; repaint(); } }
 
         void paintButton (juce::Graphics& g, bool over, bool down) override
         {
             using namespace juce;
-            auto r = getLocalBounds().toFloat().reduced (1.5f);
-
-            // drop shadow + chrome bezel
-            g.setColour (Colours::black.withAlpha (0.35f));
-            g.fillRoundedRectangle (r.translated (0, 1.5f), 4.0f);
-            ColourGradient chrome (Colour (0xfff7f7f4), r.getX(), r.getY(), Colour (0xff6f6c66), r.getX(), r.getBottom(), false);
-            chrome.addColour (0.48, Colour (0xffc9c7c1));
-            chrome.addColour (0.52, Colour (0xff8f8c86));
-            g.setGradientFill (chrome);
-            g.fillRoundedRectangle (r, 4.0f);
-
-            // brushed face, pressed in when down/on (thinner bezel on the small AUTO-style buttons)
+            auto r = getLocalBounds().toFloat().reduced (1.0f);
             const bool small = getHeight() < 26;
-            auto face = r.reduced (small ? 1.5f : 3.0f);
-            const bool pressed = down || (getClickingTogglesState() && getToggleState());
-            ColourGradient fg (pressed ? Colour (0xffb9b19c) : Colour (0xffe6dec9), face.getX(), face.getY(),
-                               pressed ? Colour (0xffd8cfb8) : Colour (0xffb3a88d), face.getX(), face.getBottom(), false);
-            g.setGradientFill (fg);
-            g.fillRoundedRectangle (face, 2.5f);
-            Random rng (7);
-            for (float y = face.getY() + 1; y < face.getBottom() - 1; y += 1.0f)
+            const float radius = small ? 6.0f : 9.0f;
+            const bool latched = getClickingTogglesState() && getToggleState();
+            const bool lit = getToggleState() && (! blink || (Time::getMillisecondCounter() / 300) % 2 == 0);
+
+            // body
+            g.setColour (down ? colours::controlHi.brighter (0.08f) : (over ? colours::controlHi : colours::control));
+            g.fillRoundedRectangle (r, radius);
+            if (latched)
             {
-                g.setColour ((rng.nextBool() ? Colours::white : Colours::black).withAlpha (0.03f + rng.nextFloat() * 0.04f));
-                g.drawHorizontalLine ((int) y, face.getX() + 1, face.getRight() - 1);
+                g.setGradientFill (accentGradient (r.getTopLeft(), r.getBottomRight(), 0.22f));
+                g.fillRoundedRectangle (r, radius);
+                g.setGradientFill (accentGradient (r.getTopLeft(), r.getBottomRight(), 0.75f));
+                g.drawRoundedRectangle (r.reduced (0.5f), radius, 1.0f);
             }
-            g.setColour (Colours::black.withAlpha (pressed ? 0.5f : 0.25f));
-            g.drawRoundedRectangle (face, 2.5f, 1.0f);
-            if (over && ! pressed)
+            else
             {
-                g.setColour (Colours::white.withAlpha (0.12f));
-                g.fillRoundedRectangle (face, 2.5f);
+                g.setColour (Colours::white.withAlpha (over ? 0.12f : 0.07f));
+                g.drawRoundedRectangle (r.reduced (0.5f), radius, 1.0f);
             }
 
-            // pilot lamp
-            auto content = face;
-            if (lamp)
+            // status LED
+            auto content = r;
+            if (led)
             {
-                const float lampD = small ? 5.0f : 7.0f;
-                auto lampArea = content.removeFromLeft (small ? 11.0f : 16.0f).withSizeKeepingCentre (lampD, lampD);
-                const bool on = getToggleState() && (! blink || (Time::getMillisecondCounter() / 250) % 2 == 0);
-                if (on)
+                const float d = small ? 5.0f : 7.0f;
+                auto ledArea = content.removeFromLeft (small ? 12.0f : 18.0f).withTrimmedLeft (small ? 3.0f : 6.0f)
+                                      .withSizeKeepingCentre (d, d);
+                if (lit)
                 {
-                    ColourGradient glow (colours::amber.withAlpha (0.65f), lampArea.getCentreX(), lampArea.getCentreY(),
-                                         Colours::transparentBlack, lampArea.getCentreX() + 9.0f, lampArea.getCentreY(), true);
-                    g.setGradientFill (glow);
-                    g.fillEllipse (lampArea.expanded (8.0f));
+                    drawGlow (g, ledArea.getCentre(), d * 2.2f, colours::cyan.withAlpha (0.6f));
+                    g.setColour (colours::cyan.brighter (0.4f));
                 }
-                ColourGradient bulb (on ? colours::amberHot : colours::amberDim.brighter (0.2f), lampArea.getCentreX() - 1, lampArea.getY(),
-                                     on ? colours::amber : colours::amberDim, lampArea.getCentreX(), lampArea.getBottom(), false);
-                g.setGradientFill (bulb);
-                g.fillEllipse (lampArea);
-                g.setColour (Colours::black.withAlpha (0.6f));
-                g.drawEllipse (lampArea, 0.8f);
+                else
+                    g.setColour (Colours::white.withAlpha (0.12f));
+                g.fillEllipse (ledArea);
             }
 
-            auto ink = colours::engraving.withAlpha (isEnabled() ? 1.0f : 0.4f);
+            const auto ink = (lit && ! led) || latched ? Colours::white
+                           : colours::text.withAlpha (isEnabled() ? (over ? 1.0f : 0.82f) : 0.35f);
             g.setColour (ink);
-            drawIcon (g, small ? content : content.reduced (2.0f), ink);
+            drawIcon (g, small ? content : content.reduced (3.0f), ink);
 
             if (progress > 0.0f && progress < 1.0f)
             {
-                auto bar = r.removeFromBottom (3.0f).reduced (4.0f, 0.0f);
-                g.setColour (Colours::black.withAlpha (0.4f));
-                g.fillRect (bar);
-                g.setColour (colours::amber);
-                g.fillRect (bar.withWidth (bar.getWidth() * progress));
+                auto bar = r.reduced (radius * 0.6f, 0.0f).removeFromBottom (3.0f).translated (0.0f, -2.0f);
+                g.setColour (Colours::white.withAlpha (0.08f));
+                g.fillRoundedRectangle (bar, 1.5f);
+                g.setGradientFill (accentGradient (bar.getTopLeft(), bar.getTopRight()));
+                g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * progress), 1.5f);
             }
         }
 
@@ -126,96 +116,123 @@ namespace hifi
         void drawIcon (juce::Graphics& g, juce::Rectangle<float> a, juce::Colour ink)
         {
             using namespace juce;
-            const float s = jmin (a.getWidth(), a.getHeight()) * 0.8f;
+            const float s = jmin (a.getWidth(), a.getHeight()) * 0.78f;
             const auto c = a.getCentre();
+            const PathStrokeType stroke (jmax (1.4f, s * 0.085f), PathStrokeType::curved, PathStrokeType::rounded);
             Path p;
             switch (icon)
             {
                 case Icon::power:
-                {
-                    p.addCentredArc (c.x, c.y, s * 0.36f, s * 0.36f, 0, 0.7f, MathConstants<float>::twoPi - 0.7f, true);
-                    g.strokePath (p, PathStrokeType (s * 0.1f, PathStrokeType::curved, PathStrokeType::rounded));
-                    g.drawLine (c.x, c.y - s * 0.48f, c.x, c.y - s * 0.05f, s * 0.1f);
+                    p.addCentredArc (c.x, c.y, s * 0.34f, s * 0.34f, 0, 0.75f, MathConstants<float>::twoPi - 0.75f, true);
+                    p.startNewSubPath (c.x, c.y - s * 0.46f);
+                    p.lineTo (c.x, c.y - s * 0.06f);
+                    g.strokePath (p, stroke);
                     return;
-                }
                 case Icon::bolt:
-                    p.startNewSubPath (c.x + s * 0.10f, c.y - s * 0.50f);
-                    p.lineTo (c.x - s * 0.26f, c.y + s * 0.06f);
+                    p.startNewSubPath (c.x + s * 0.10f, c.y - s * 0.48f);
+                    p.lineTo (c.x - s * 0.24f, c.y + s * 0.06f);
                     p.lineTo (c.x - s * 0.01f, c.y + s * 0.06f);
-                    p.lineTo (c.x - s * 0.12f, c.y + s * 0.50f);
-                    p.lineTo (c.x + s * 0.26f, c.y - s * 0.08f);
+                    p.lineTo (c.x - s * 0.10f, c.y + s * 0.48f);
+                    p.lineTo (c.x + s * 0.24f, c.y - s * 0.08f);
                     p.lineTo (c.x + s * 0.02f, c.y - s * 0.08f);
                     p.closeSubPath();
+                    if (getToggleState()) g.setGradientFill (accentGradient ({ c.x, c.y - s * 0.5f }, { c.x, c.y + s * 0.5f }));
                     g.fillPath (p);
                     return;
                 case Icon::left:
                 case Icon::right:
                 {
                     const float d = icon == Icon::left ? -1.0f : 1.0f;
-                    p.addTriangle (c.x + d * s * 0.22f, c.y, c.x - d * s * 0.18f, c.y - s * 0.26f, c.x - d * s * 0.18f, c.y + s * 0.26f);
-                    g.fillPath (p);
+                    p.startNewSubPath (c.x - d * s * 0.10f, c.y - s * 0.24f);
+                    p.lineTo (c.x + d * s * 0.12f, c.y);
+                    p.lineTo (c.x - d * s * 0.10f, c.y + s * 0.24f);
+                    g.strokePath (p, stroke);
                     return;
                 }
                 case Icon::star:
-                {
-                    p.addStar (c, 5, s * 0.2f, s * 0.45f, 0.0f);
-                    if (getToggleState()) { g.setColour (colours::amber.darker (0.2f)); g.fillPath (p); g.setColour (ink); }
-                    g.strokePath (p, PathStrokeType (1.2f));
+                    p.addStar (c, 5, s * 0.19f, s * 0.42f, 0.0f);
+                    if (getToggleState())
+                    {
+                        g.setColour (colours::warn);
+                        g.fillPath (p);
+                        return;
+                    }
+                    g.strokePath (p, PathStrokeType (jmax (1.2f, s * 0.06f), PathStrokeType::curved, PathStrokeType::rounded));
                     return;
-                }
                 case Icon::menu:
                     for (int i = -1; i <= 1; ++i)
-                        g.fillRoundedRectangle (c.x - s * 0.32f, c.y + i * s * 0.22f - s * 0.05f, s * 0.64f, s * 0.1f, s * 0.05f);
+                    {
+                        p.startNewSubPath (c.x - s * 0.28f, c.y + (float) i * s * 0.2f);
+                        p.lineTo (c.x + s * 0.28f, c.y + (float) i * s * 0.2f);
+                    }
+                    g.strokePath (p, stroke);
                     return;
                 case Icon::folder:
-                    p.startNewSubPath (c.x - s * 0.42f, c.y - s * 0.28f);
-                    p.lineTo (c.x - s * 0.12f, c.y - s * 0.28f);
-                    p.lineTo (c.x - s * 0.02f, c.y - s * 0.16f);
-                    p.lineTo (c.x + s * 0.42f, c.y - s * 0.16f);
-                    p.lineTo (c.x + s * 0.42f, c.y + s * 0.30f);
-                    p.lineTo (c.x - s * 0.42f, c.y + s * 0.30f);
+                    p.startNewSubPath (c.x - s * 0.38f, c.y - s * 0.26f);
+                    p.lineTo (c.x - s * 0.10f, c.y - s * 0.26f);
+                    p.lineTo (c.x, c.y - s * 0.15f);
+                    p.lineTo (c.x + s * 0.38f, c.y - s * 0.15f);
+                    p.lineTo (c.x + s * 0.38f, c.y + s * 0.28f);
+                    p.lineTo (c.x - s * 0.38f, c.y + s * 0.28f);
                     p.closeSubPath();
-                    g.strokePath (p, PathStrokeType (s * 0.08f, PathStrokeType::mitered));
+                    g.strokePath (p, PathStrokeType (jmax (1.3f, s * 0.07f), PathStrokeType::curved, PathStrokeType::rounded));
                     return;
                 case Icon::none:
-                    g.setFont (labelFont (jmin (13.0f, jmax (8.5f, a.getHeight() * 0.62f))));
+                    g.setFont (font (jmin (14.0f, jmax (9.0f, a.getHeight() * 0.5f)), true));
                     g.drawText (text, a, Justification::centred, false);
                     return;
             }
+            ignoreUnused (ink);
         }
 
         Icon icon;
-        bool lamp;
+        bool led;
         bool blink = false;
         juce::String text;
         float progress = 0.0f;
     };
 
     //==============================================================================
-    /** Vacuum-fluorescent numeric readout with an engraved caption above or beside it. */
-    class VfdDisplay : public juce::Component
+    /** Numeric readout card: small caption, large value, optional unit. */
+    class Readout : public juce::Component
     {
     public:
-        explicit VfdDisplay (juce::String captionText, juce::Colour c = colours::vfd)
-            : caption (std::move (captionText)), colour (c) {}
+        Readout (juce::String captionText, juce::String unitText = {})
+            : caption (std::move (captionText)), unit (std::move (unitText)) {}
 
-        void setValueText (const juce::String& t) { if (t != value) { value = t; repaint(); } }
+        void setValueText (const juce::String& t)  { if (t != value) { value = t; repaint(); } }
+        void setValueColour (juce::Colour c)       { if (c != valueColour) { valueColour = c; repaint(); } }
         std::function<void()> onClick;
 
         void paint (juce::Graphics& g) override
         {
-            auto r = getLocalBounds().toFloat();
+            using namespace juce;
+            auto r = getLocalBounds().toFloat().reduced (1.0f);
+            if (card) drawCard (g, r, 10.0f);
+            auto inner = r.reduced (card ? 12.0f : 4.0f, card ? 8.0f : 2.0f);
             if (caption.isNotEmpty())
-                drawEngravedText (g, caption, r.removeFromTop (13.0f), labelFont (9.5f), juce::Justification::centred);
-            drawInsetWindow (g, r.reduced (0.5f, 1.0f), 3.0f);
-            auto digits = r.reduced (8.0f, r.getHeight() * 0.24f);
-            drawVfdText (g, value, digits, colour, true);
+                drawCaption (g, caption, inner.removeFromTop (12.0f), Justification::centredLeft, colours::textDim, 9.5f);
+
+            const float h = jmin (26.0f, inner.getHeight() * 0.92f);
+            const auto f = font (h, true);
+            const float uw = unit.isNotEmpty() ? textWidth (font (h * 0.48f), unit) + 6.0f : 0.0f;
+            g.setColour (valueColour);
+            g.setFont (f);
+            g.drawText (value, inner.withTrimmedRight (uw), Justification::centredRight, false);
+            if (unit.isNotEmpty())
+            {
+                g.setColour (colours::textDim);
+                g.setFont (font (h * 0.48f));
+                g.drawText (unit, inner.removeFromRight (uw - 2.0f).withTrimmedTop (h * 0.32f), Justification::centredRight, false);
+            }
         }
 
+        void setCardStyle (bool b) { card = b; repaint(); }
         void mouseUp (const juce::MouseEvent&) override { if (onClick) onClick(); }
 
     private:
-        juce::String caption, value { "---" };
-        juce::Colour colour;
+        juce::String caption, unit, value { "--" };
+        juce::Colour valueColour { colours::text };
+        bool card = true;
     };
 }

@@ -10,14 +10,14 @@ namespace
     //                       IN  SUBMONO TIGHT K/B PUNCH SNAP MUD REESE HARSH AIR  GLUE ATT  REL  WIDTH SAT  LOUD  CEIL  FIX  MIX OUT  AUTO
     struct Factory { const char* name; std::array<float, 21> v; };
     const std::array<Factory, 8> factoryPresets {{
-        { "Default",              {{ 0, 100, 20, 20, 20, 15, 25, 20, 25, 20,  25, 10, 150, 100, 15,  -9.0f, -1.0f, 100, 100, 0, 1 }} },
-        { "Liquid Polish",        {{ 0,  90, 25, 20, 15, 15, 30, 20, 35, 40,  30, 20, 200, 115, 20,  -9.0f, -1.0f,  85, 100, 0, 1 }} },
-        { "Neuro Smash",          {{ 0, 120, 45, 40, 45, 35, 40, 55, 45, 25,  45,  5, 100, 110, 40,  -6.0f, -0.3f, 100, 100, 0, 1 }} },
-        { "Jump Up Bounce",       {{ 0, 110, 35, 55, 50, 30, 35, 40, 35, 25,  40,  8, 120, 105, 30,  -6.5f, -0.3f, 100, 100, 0, 0 }} },
-        { "Rollers Sub Fix",      {{ 0, 140, 50, 45, 25, 20, 40, 25, 25, 20,  30, 15, 160, 100, 15,  -8.0f, -0.5f, 100, 100, 0, 1 }} },
-        { "Jungle Breaks",        {{ 0, 100, 20, 25, 55, 50, 30, 20, 30, 30,  35, 25, 180, 110, 35,  -8.0f, -0.5f,  90, 100, 0, 0 }} },
-        { "Club Loud",            {{ 0, 120, 40, 35, 40, 30, 35, 40, 40, 30,  50, 10, 120, 105, 35,  -5.0f, -0.3f, 100, 100, 0, 1 }} },
-        { "Gentle Master Assist", {{ 0,  80, 10, 10, 10, 10, 15, 10, 15, 10,  15, 30, 250, 100,  5, -12.0f, -1.0f,  60, 100, 0, 1 }} },
+        { "Default",              {{ 0, 100, 20, 20, 20, 15, 25, 20, 25, 20,  25, 10, 150, 100, 15,  -7.0f, -1.0f, 100, 100, 0, 1 }} },
+        { "Liquid Polish",        {{ 0,  90, 25, 20, 15, 15, 30, 20, 35, 40,  30, 20, 200, 115, 20,  -8.0f, -1.0f,  85, 100, 0, 1 }} },
+        { "Neuro Smash",          {{ 0, 120, 45, 40, 45, 35, 40, 55, 45, 25,  45,  5, 100, 110, 40,  -4.5f, -0.3f, 100, 100, 0, 1 }} },
+        { "Jump Up Bounce",       {{ 0, 110, 35, 55, 50, 30, 35, 40, 35, 25,  40,  8, 120, 105, 30,  -5.0f, -0.3f, 100, 100, 0, 0 }} },
+        { "Rollers Sub Fix",      {{ 0, 140, 50, 45, 25, 20, 40, 25, 25, 20,  30, 15, 160, 100, 15,  -6.0f, -0.5f, 100, 100, 0, 1 }} },
+        { "Jungle Breaks",        {{ 0, 100, 20, 25, 55, 50, 30, 20, 30, 30,  35, 25, 180, 110, 35,  -6.5f, -0.5f,  90, 100, 0, 0 }} },
+        { "Club Loud",            {{ 0, 120, 40, 35, 40, 30, 35, 40, 40, 30,  50, 10, 120, 105, 35,  -3.5f, -0.3f, 100, 100, 0, 1 }} },
+        { "Gentle Master Assist", {{ 0,  80, 10, 10, 10, 10, 15, 10, 15, 10,  15, 30, 250, 100,  5, -10.0f, -1.0f,  60, 100, 0, 1 }} },
     }};
 
     void setParam (juce::AudioProcessorValueTreeState& apvts, const juce::String& id, float value)
@@ -40,7 +40,7 @@ PresetManager::PresetManager (juce::AudioProcessorValueTreeState& s) : apvts (s)
 juce::File PresetManager::getUserFolder()
 {
     auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("Mod Con DSP").getChildFile ("DnB Mix Doctor").getChildFile ("Presets");
+                   .getChildFile ("Mod Con DSP").getChildFile ("DnB Mix Doctor V2").getChildFile ("Presets");
     dir.createDirectory();
     return dir;
 }
@@ -118,7 +118,7 @@ bool PresetManager::saveUser (const juce::String& rawName)
     const auto name = juce::File::createLegalFileName (rawName.trim());
     if (name.isEmpty() || getFactoryNames().contains (name)) return false;
 
-    juce::XmlElement xml ("DnBMixDoctorPreset");
+    juce::XmlElement xml ("DnBMixDoctorV2Preset");
     xml.setAttribute ("version", params::version);
     for (auto* p : apvts.processor.getParameters())
         if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))

@@ -1,30 +1,24 @@
 #include "Visualizer.h"
 #include "../PluginProcessor.h"
 
-namespace hifi
+namespace mcui
 {
     using namespace juce;
 
     namespace
     {
         constexpr float displayHeadroom = 0.86f;   // 0 dBFS sits at 86 % of the half height
-        const char* tabNames[] = { "WAVE", "SPECTRUM", "STEREO" };
-
-        Colour bandColour (const mcdsp::VisColumn& c)
-        {
-            // weight highs up: they carry far less energy than the sub but matter as much visually
-            const float wl = c.eLow, wm = c.eMid * 3.0f, wh = c.eHigh * 12.0f;
-            const float sum = wl + wm + wh;
-            if (sum <= 1.0e-12f) return colours::midAmber;
-            auto mixc = [&] (auto get) { return (get (colours::subRed) * wl + get (colours::midAmber) * wm + get (colours::highCyan) * wh) / sum; };
-            return Colour::fromFloatRGBA (mixc ([] (Colour k) { return k.getFloatRed(); }),
-                                          mixc ([] (Colour k) { return k.getFloatGreen(); }),
-                                          mixc ([] (Colour k) { return k.getFloatBlue(); }), 1.0f);
-        }
+        const char* tabNames[] = { "Wave", "Spectrum", "Stereo" };
 
         float freqToX (float f, Rectangle<float> r)
         {
             return r.getX() + r.getWidth() * std::log (f / 20.0f) / std::log (1000.0f);
+        }
+
+        /** One-pole coefficient for a time constant expressed in waveform columns. */
+        float colCoef (double seconds)
+        {
+            return 1.0f - std::exp (-1.0f / (float) (seconds * mcdsp::ColumnBuilder::columnsPerSecond));
         }
     }
 
@@ -32,18 +26,18 @@ namespace hifi
     {
         specIn.fill (-100.0f);
         specOut.fill (-100.0f);
+        colTone.fill (0.4f);
         setOpaque (false);
     }
 
     void Visualizer::resized()
     {
-        auto r = getLocalBounds().toFloat();
-        glass = r.reduced (7.0f);
-        plot = glass.reduced (12.0f, 10.0f).withTrimmedTop (16.0f);
-        auto tabRow = glass.reduced (10.0f, 6.0f).removeFromTop (16.0f);
-        for (int i = 2; i >= 0; --i)
-            tabs[(size_t) i] = tabRow.removeFromRight (i == 1 ? 82.0f : 62.0f).reduced (2.0f, 0.0f);
-        background = {};
+        auto r = getLocalBounds().toFloat().reduced (1.0f);
+        screen = r.reduced (8.0f);
+        plot = screen.reduced (12.0f, 10.0f).withTrimmedTop (22.0f);
+        auto tabRow = screen.reduced (8.0f, 7.0f).removeFromTop (20.0f).removeFromRight (222.0f);
+        for (int i = 0; i < 3; ++i)
+            tabs[(size_t) i] = tabRow.removeFromLeft (74.0f).reduced (1.0f, 0.0f);
         phosphor = {};
     }
 
@@ -58,6 +52,22 @@ namespace hifi
     }
 
     //==============================================================================
+    float Visualizer::columnBrightness (const mcdsp::VisColumn& c) noexcept
+    {
+        // weight mids and highs up: they carry far less energy than the sub but matter as much to the ear
+        const float wl = c.eLow, wm = c.eMid * 3.0f, wh = c.eHigh * 12.0f;
+        const float sum = wl + wm + wh;
+        if (sum <= 1.0e-10f) return -1.0f;
+        return (0.5f * wm + wh) / sum;
+    }
+
+    Colour Visualizer::moodColour (float hueOffset, float brightness, float saturation) const noexcept
+    {
+        float h = std::fmod (moodHue + hueOffset, 1.0f);
+        if (h < 0.0f) h += 1.0f;
+        return Colour::fromHSV (h, jlimit (0.0f, 1.0f, saturation), jlimit (0.0f, 1.0f, brightness), 1.0f);
+    }
+
     void Visualizer::frame (double t)
     {
         const double dt = lastFrameTime > 0 ? jlimit (0.0, 0.1, t - lastFrameTime) : 1.0 / 60.0;
@@ -68,7 +78,12 @@ namespace hifi
         pullStereo();
         if (view == View::spectrum) computeSpectrum();
 
-        if (t - lastColumnTime > 0.15) { rmsL *= 0.8f; rmsR *= 0.8f; }   // host stopped calling processBlock
+        if (t - lastColumnTime > 0.15) { rmsL *= 0.8f; rmsR *= 0.8f; energy *= 0.9f; }   // host stopped
+
+        // mood hue: sub-heavy -> violet (0.78), bright -> cyan/teal (0.48), punchy -> pushed toward magenta/pink
+        const float nb = jlimit (0.0f, 1.0f, (moodTone - 0.12f) / 0.55f);
+        const float targetHue = 0.78f - 0.30f * nb + 0.13f * moodPunch;
+        moodHue += (targetHue - moodHue) * (1.0f - std::exp (-(float) dt / 0.6f));
 
         if (onFrame) onFrame (dt);
         repaint();
@@ -79,14 +94,29 @@ namespace hifi
         const int n = proc.columnFifo.pop (popBuf.data(), numCols);
         if (n == 0) return;
 
+        const float toneCoef = colCoef (1.5), punchCoef = colCoef (1.2), peakCoef = colCoef (0.6), energyCoef = colCoef (0.08);
         double pl = 0, pr = 0;
         for (int i = 0; i < n; ++i)
         {
             const auto& c = popBuf[(size_t) i];
+            const float tone = columnBrightness (c);
+            const float peak = std::max (std::abs (c.outMax), std::abs (c.outMin));
+
+            colTone[(size_t) colWrite] = tone < 0.0f ? moodTone : tone;
             cols[(size_t) colWrite] = c;
             colWrite = (colWrite + 1) % numCols;
+
+            if (tone >= 0.0f && peak > 0.003f)
+            {
+                moodTone += (tone - moodTone) * toneCoef;
+                slowPeak += (peak - slowPeak) * peakCoef;
+                const float transient = jlimit (0.0f, 1.0f, (peak / jmax (1.0e-4f, slowPeak) - 1.0f) / 1.2f);
+                moodPunch += (transient - moodPunch) * punchCoef;
+            }
+            energy += (jmin (1.0f, peak) - energy) * energyCoef;
+
             pl += c.rmsL * c.rmsL; pr += c.rmsR * c.rmsR;
-            if (std::max (std::abs (c.outMax), std::abs (c.outMin)) >= 0.9999f)
+            if (peak >= 0.9999f)
                 clipFlashUntil = lastFrameTime + 0.6;
         }
         colCount += n;
@@ -143,7 +173,6 @@ namespace hifi
                 float mag = 0;
                 if (bin1 - bin0 < 1.5f)
                 {
-                    // low end: fewer than ~1 bin per point -> interpolate for a smooth curve
                     const float centre = jlimit (1.0f, (float) (fftSize / 2 - 2), 0.5f * (bin0 + bin1));
                     const int b = (int) centre;
                     const float frac = centre - (float) b;
@@ -166,53 +195,25 @@ namespace hifi
     }
 
     //==============================================================================
-    void Visualizer::renderBackground (float scale)
-    {
-        bgScale = scale;
-        background = Image (Image::ARGB, jmax (1, roundToInt (getWidth() * scale)), jmax (1, roundToInt (getHeight() * scale)), true);
-        Graphics g (background);
-        g.addTransform (AffineTransform::scale (scale));
-        const auto outer = getLocalBounds().toFloat();
-
-        // chrome bezel
-        ColourGradient bezel (Colour (0xfff4f2ec), 0, outer.getY(), Colour (0xff57534d), 0, outer.getBottom(), false);
-        bezel.addColour (0.5, Colour (0xffb9b5ad));
-        g.setGradientFill (bezel);
-        g.fillRoundedRectangle (outer, 9.0f);
-        g.setColour (Colours::black.withAlpha (0.7f));
-        g.fillRoundedRectangle (glass.expanded (1.5f), 6.0f);
-
-        // smoked glass with warm backlight
-        ColourGradient bg (Colour (0xff1d140c), glass.getCentreX(), glass.getBottom() + 20.0f,
-                           colours::glass, glass.getCentreX(), glass.getY(), true);
-        g.setGradientFill (bg);
-        g.fillRoundedRectangle (glass, 5.0f);
-        ColourGradient warm (colours::amber.withAlpha (0.10f), glass.getCentreX(), glass.getCentreY() + glass.getHeight() * 0.3f,
-                             Colours::transparentBlack, glass.getX(), glass.getY(), true);
-        g.setGradientFill (warm);
-        g.fillRoundedRectangle (glass, 5.0f);
-
-        // scanlines
-        for (float y = glass.getY() + 1.0f; y < glass.getBottom(); y += 2.0f)
-        {
-            g.setColour (Colours::black.withAlpha (0.18f));
-            g.fillRect (glass.getX(), y, glass.getWidth(), 0.6f);
-        }
-        // inner shadow
-        g.setColour (Colours::black.withAlpha (0.6f));
-        g.drawRoundedRectangle (glass, 5.0f, 2.0f);
-    }
-
     void Visualizer::paint (Graphics& g)
     {
-        const float scale = g.getInternalContext().getPhysicalPixelScaleFactor();
-        if (background.isNull() || bgScale != scale)
-            renderBackground (scale);
-        g.drawImage (background, getLocalBounds().toFloat());
+        const auto outer = getLocalBounds().toFloat().reduced (1.0f);
+        drawCard (g, outer, 14.0f);
+        g.setColour (colours::screen);
+        g.fillRoundedRectangle (screen, 10.0f);
 
         {
             Graphics::ScopedSaveState ss (g);
-            g.reduceClipRegion (glass.reduced (2.0f).toNearestInt());
+            Path clip;
+            clip.addRoundedRectangle (screen, 10.0f);
+            g.reduceClipRegion (clip);
+
+            // ambient light from the music: a soft glow in the current mood colour that breathes with the level
+            drawGlow (g, { screen.getCentreX(), screen.getBottom() + 20.0f }, screen.getWidth() * 0.55f,
+                      moodColour (0.0f, 0.9f).withAlpha (0.10f + 0.16f * energy));
+            drawGlow (g, { screen.getX() + screen.getWidth() * 0.15f, screen.getY() }, screen.getWidth() * 0.35f,
+                      moodColour (-0.12f, 0.9f).withAlpha (0.05f + 0.06f * energy));
+
             switch (view)
             {
                 case View::wave:     drawWave (g); break;
@@ -220,27 +221,31 @@ namespace hifi
                 case View::stereo:   drawStereo (g); break;
             }
         }
+        g.setColour (Colours::white.withAlpha (0.05f));
+        g.drawRoundedRectangle (screen.reduced (0.5f), 10.0f, 1.0f);
         drawTabs (g);
-
-        // glass reflection
-        ColourGradient glare (Colours::white.withAlpha (0.06f), glass.getX(), glass.getY(),
-                              Colours::transparentWhite, glass.getX() + glass.getWidth() * 0.35f, glass.getBottom(), false);
-        g.setGradientFill (glare);
-        g.fillRoundedRectangle (glass, 5.0f);
     }
 
     void Visualizer::drawTabs (Graphics& g)
     {
+        auto bar = tabs[0].getUnion (tabs[2]).expanded (2.0f);
+        g.setColour (colours::screen);
+        g.fillRoundedRectangle (bar.expanded (3.0f), bar.getHeight() * 0.5f + 3.0f);
+        g.setColour (Colours::white.withAlpha (0.05f));
+        g.fillRoundedRectangle (bar, bar.getHeight() * 0.5f);
         for (int i = 0; i < 3; ++i)
         {
             const auto& r = tabs[(size_t) i];
             const bool active = (int) view == i;
-            g.setColour (active ? colours::amber.withAlpha (0.18f) : Colours::white.withAlpha (0.03f));
-            g.fillRoundedRectangle (r, 3.0f);
-            g.setColour (active ? colours::amber.withAlpha (0.8f) : colours::amber.withAlpha (0.25f));
-            g.drawRoundedRectangle (r, 3.0f, 0.8f);
-            g.setFont (labelFont (9.5f));
-            g.setColour (active ? colours::amberHot : colours::amber.withAlpha (0.45f));
+            if (active)
+            {
+                g.setColour (moodColour (0.0f, 0.85f, 0.65f).withAlpha (0.35f));
+                g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+                g.setColour (moodColour (0.0f, 1.0f, 0.5f).withAlpha (0.7f));
+                g.drawRoundedRectangle (r.reduced (0.5f), r.getHeight() * 0.5f, 1.0f);
+            }
+            g.setFont (font (11.0f, active));
+            g.setColour (active ? Colours::white : colours::textDim);
             g.drawText (tabNames[i], r, Justification::centred);
         }
     }
@@ -254,40 +259,50 @@ namespace hifi
         const float colW = plot.getWidth() / (float) numCols;
         auto yFor = [&] (float v) { return midY - jlimit (-1.0f / displayHeadroom, 1.0f / displayHeadroom, v) * k; };
 
-        // grid: -6 / -12 dB lines, centre line, one vertical line per second scrolling with the audio
-        g.setColour (colours::amber.withAlpha (0.07f));
+        // grid
+        g.setColour (Colours::white.withAlpha (0.035f));
         for (float lvl : { 0.5f, 0.25f })
         {
             g.drawHorizontalLine (roundToInt (yFor (lvl)), plot.getX(), plot.getRight());
             g.drawHorizontalLine (roundToInt (yFor (-lvl)), plot.getX(), plot.getRight());
         }
-        g.setColour (colours::amber.withAlpha (0.14f));
+        g.setColour (Colours::white.withAlpha (0.07f));
         g.drawHorizontalLine (roundToInt (midY), plot.getX(), plot.getRight());
         const int perSecond = mcdsp::ColumnBuilder::columnsPerSecond;
+        g.setColour (Colours::white.withAlpha (0.03f));
         for (int c = 0; c < numCols; ++c)
             if (((colCount - numCols + c) % perSecond) == 0)
-            {
-                g.setColour (colours::amber.withAlpha (0.06f));
                 g.drawVerticalLine (roundToInt (plot.getX() + c * colW), plot.getY(), plot.getBottom());
-            }
-        g.setFont (labelFont (8.5f));
-        g.setColour (colours::amber.withAlpha (0.35f));
-        g.drawText ("-6", Rectangle<float> (plot.getRight() - 24, yFor (0.5f) - 10, 22, 10), Justification::centredRight);
-        g.drawText ("-12", Rectangle<float> (plot.getRight() - 24, yFor (0.25f) - 10, 22, 10), Justification::centredRight);
+        g.setFont (font (9.0f));
+        g.setColour (colours::textFaint);
+        g.drawText ("-6", Rectangle<float> (plot.getRight() - 24, yFor (0.5f) - 11, 22, 10), Justification::centredRight);
+        g.drawText ("-12", Rectangle<float> (plot.getRight() - 24, yFor (0.25f) - 11, 22, 10), Justification::centredRight);
 
-        // processed signal: solid, band-coloured per column
+        // processed signal: each column tinted around the mood hue by its own spectral balance, lit by its level
+        Path topEdge, bottomEdge;
         for (int c = 0; c < numCols; ++c)
         {
-            const auto& col = cols[(size_t) ((colWrite + c) % numCols)];
+            const int idx = (colWrite + c) % numCols;
+            const auto& col = cols[(size_t) idx];
             const float y1 = yFor (col.outMax), y2 = yFor (col.outMin);
-            const auto colour = bandColour (col);
+            const float x = plot.getX() + c * colW;
+            const float peak = jmax (std::abs (col.outMax), std::abs (col.outMin));
+            const float offset = -jlimit (-0.35f, 0.35f, colTone[(size_t) idx] - moodTone) * 0.45f;
+            const auto colour = moodColour (offset, 0.42f + 0.58f * jmin (1.0f, peak / 0.85f), 0.62f + 0.25f * (1.0f - colTone[(size_t) idx]));
             g.setColour (colour.withAlpha (0.92f));
-            g.fillRect (plot.getX() + c * colW, y1, colW + 0.5f, jmax (1.0f, y2 - y1));
+            g.fillRect (x, y1, colW + 0.5f, jmax (1.0f, y2 - y1));
+            if (c == 0) { topEdge.startNewSubPath (x, y1); bottomEdge.startNewSubPath (x, y2); }
+            else        { topEdge.lineTo (x, y1);          bottomEdge.lineTo (x, y2); }
         }
-        // soft bloom over the waveform
-        ColourGradient bloom (Colours::white.withAlpha (0.10f), 0, midY - k, Colours::transparentWhite, 0, midY, false);
+        // bright rim along the envelope + soft bloom through the centre
+        const auto rim = moodColour (0.0f, 1.0f, 0.25f).withAlpha (0.75f);
+        g.setColour (rim);
+        g.strokePath (topEdge, PathStrokeType (1.0f));
+        g.strokePath (bottomEdge, PathStrokeType (1.0f));
+        ColourGradient bloom (Colours::white.withAlpha (0.0f), 0, midY - k, Colours::white.withAlpha (0.0f), 0, midY + k, false);
+        bloom.addColour (0.5, Colours::white.withAlpha (0.10f));
         g.setGradientFill (bloom);
-        g.fillRect (plot.withTop (midY - k).withBottom (midY));
+        g.fillRect (plot.withTop (midY - k).withBottom (midY + k));
 
         // unprocessed input: thin ghost outline
         Path ghost;
@@ -302,11 +317,12 @@ namespace hifi
             const auto& col = cols[(size_t) ((colWrite + c) % numCols)];
             ghost.lineTo (plot.getX() + c * colW, yFor (col.inMin));
         }
-        g.setColour (Colours::white.withAlpha (0.38f));
-        g.strokePath (ghost, PathStrokeType (0.9f));
+        g.setColour (Colours::white.withAlpha (0.28f));
+        g.strokePath (ghost, PathStrokeType (0.8f));
 
         // peak-hold markers per quarter second
         const int win = perSecond / 4;
+        g.setColour (Colours::white.withAlpha (0.38f));
         for (int start = 0; start < numCols; start += win)
         {
             float pk = 0;
@@ -316,39 +332,39 @@ namespace hifi
                 pk = jmax (pk, std::abs (col.outMax), std::abs (col.outMin));
             }
             if (pk < 0.01f) continue;
-            const float x0 = plot.getX() + start * colW, x1 = x0 + win * colW - 2.0f;
-            g.setColour (colours::amberHot.withAlpha (0.85f));
-            g.fillRect (x0 + 1.0f, yFor (pk) - 1.0f, x1 - x0, 1.5f);
-            g.fillRect (x0 + 1.0f, yFor (-pk), x1 - x0, 1.5f);
+            const float x0 = plot.getX() + start * colW, x1 = x0 + win * colW - 3.0f;
+            g.fillRect (x0 + 1.5f, yFor (pk) - 1.0f, x1 - x0, 1.0f);
+            g.fillRect (x0 + 1.5f, yFor (-pk), x1 - x0, 1.0f);
         }
 
-        // 0 dBFS clip lines, flashing red after an over
-        const bool flashing = lastFrameTime < clipFlashUntil && std::fmod (lastFrameTime, 0.16) < 0.08;
+        // 0 dBFS lines, flashing red after an over
         const bool clipped = lastFrameTime < clipFlashUntil;
-        g.setColour (clipped ? (flashing ? colours::clipRed : colours::clipRed.withAlpha (0.5f)) : colours::clipRed.withAlpha (0.35f));
-        const float dash[] = { 5.0f, 4.0f };
+        const bool flashing = clipped && std::fmod (lastFrameTime, 0.16) < 0.08;
+        g.setColour (clipped ? (flashing ? colours::bad : colours::bad.withAlpha (0.5f)) : colours::bad.withAlpha (0.30f));
+        const float dash[] = { 4.0f, 4.0f };
         for (float s : { 1.0f, -1.0f })
-            g.drawDashedLine (Line<float> (plot.getX(), yFor (s), plot.getRight(), yFor (s)), dash, 2, clipped ? 1.6f : 1.0f);
-        g.setFont (labelFont (8.5f));
+            g.drawDashedLine (Line<float> (plot.getX(), yFor (s), plot.getRight(), yFor (s)), dash, 2, clipped ? 1.5f : 1.0f);
+        g.setFont (font (9.0f, true));
         g.drawText ("0 dBFS", Rectangle<float> (plot.getX() + 2, yFor (-1.0f) + 2, 48, 10), Justification::centredLeft);
 
-        // gain-reduction trace along the top edge
-        const float grH = plot.getHeight() * 0.22f;
+        // gain-reduction trace hanging from the top edge
+        const float grTop = screen.getY() + 2.0f, grH = plot.getHeight() * 0.22f;
         Path gr;
-        gr.startNewSubPath (plot.getX(), glass.getY() + 2.0f);
+        gr.startNewSubPath (plot.getX(), grTop);
         for (int c = 0; c < numCols; ++c)
         {
             const auto& col = cols[(size_t) ((colWrite + c) % numCols)];
-            gr.lineTo (plot.getX() + c * colW, glass.getY() + 2.0f + jlimit (0.0f, 1.0f, -col.grDb / 12.0f) * grH);
+            gr.lineTo (plot.getX() + c * colW, grTop + jlimit (0.0f, 1.0f, -col.grDb / 12.0f) * grH);
         }
-        gr.lineTo (plot.getRight(), glass.getY() + 2.0f);
+        gr.lineTo (plot.getRight(), grTop);
         gr.closeSubPath();
-        g.setColour (Colour (0xffff6a4a).withAlpha (0.22f));
+        g.setColour (colours::pink.withAlpha (0.16f));
         g.fillPath (gr);
-        g.setColour (Colour (0xffff8a6a).withAlpha (0.55f));
+        g.setColour (colours::pink.withAlpha (0.55f));
         g.strokePath (gr, PathStrokeType (0.8f));
-        g.setColour (colours::amber.withAlpha (0.45f));
-        g.drawText ("GR", Rectangle<float> (plot.getX() + 2, glass.getY() + 4, 30, 10), Justification::centredLeft);
+        g.setFont (font (9.5f, true));
+        g.setColour (colours::pink.withAlpha (0.8f));
+        g.drawText ("GAIN REDUCTION", Rectangle<float> (screen.getX() + 12, screen.getY() + 8, 120, 12), Justification::centredLeft);
     }
 
     //==============================================================================
@@ -357,22 +373,25 @@ namespace hifi
         const float dbTop = 6.0f, dbBottom = -78.0f;
         auto yFor = [&] (float db) { return jmap (jlimit (dbBottom, dbTop, db), dbBottom, dbTop, plot.getBottom(), plot.getY()); };
 
-        g.setFont (labelFont (8.5f));
+        g.setFont (font (9.0f));
         for (float f : { 20.f, 50.f, 100.f, 200.f, 500.f, 1000.f, 2000.f, 5000.f, 10000.f, 20000.f })
         {
             const float x = freqToX (f, plot);
-            g.setColour (colours::amber.withAlpha (0.08f));
+            g.setColour (Colours::white.withAlpha (0.04f));
             g.drawVerticalLine (roundToInt (x), plot.getY(), plot.getBottom());
-            g.setColour (colours::amber.withAlpha (0.4f));
+            g.setColour (colours::textFaint);
             const String label = f >= 1000.0f ? String (f / 1000.0f, 0) + "k" : String ((int) f);
-            g.drawText (label, Rectangle<float> (x + 2, plot.getBottom() - 11, 30, 10), Justification::centredLeft);
+            if (x < plot.getRight() - 30.0f)
+                g.drawText (label, Rectangle<float> (x + 3, plot.getBottom() - 11, 30, 10), Justification::centredLeft);
+            else
+                g.drawText (label, Rectangle<float> (x - 33, plot.getBottom() - 11, 30, 10), Justification::centredRight);
         }
         for (float db = 0.0f; db >= -72.0f; db -= 12.0f)
         {
-            g.setColour (colours::amber.withAlpha (db == 0.0f ? 0.16f : 0.07f));
+            g.setColour (Colours::white.withAlpha (db == 0.0f ? 0.08f : 0.035f));
             g.drawHorizontalLine (roundToInt (yFor (db)), plot.getX(), plot.getRight());
-            g.setColour (colours::amber.withAlpha (0.35f));
-            g.drawText (String ((int) db), Rectangle<float> (plot.getRight() - 26, yFor (db) - 10, 24, 10), Justification::centredRight);
+            g.setColour (colours::textFaint);
+            g.drawText (String ((int) db), Rectangle<float> (plot.getRight() - 26, yFor (db) - 11, 24, 10), Justification::centredRight);
         }
 
         auto curve = [&] (const std::array<float, numPoints>& s, bool closed)
@@ -387,20 +406,24 @@ namespace hifi
             return p;
         };
 
-        auto outFill = curve (specOut, true);
-        ColourGradient fillGrad (colours::amber.withAlpha (0.55f), 0, plot.getY(), colours::subRed.withAlpha (0.12f), 0, plot.getBottom(), false);
-        g.setGradientFill (fillGrad);
-        g.fillPath (outFill);
-        g.setColour (colours::amberHot);
-        g.strokePath (curve (specOut, false), PathStrokeType (1.4f));
-        g.setColour (colours::highCyan.withAlpha (0.55f));
+        ColourGradient fill (moodColour (0.08f, 0.95f).withAlpha (0.45f), plot.getX(), 0,
+                             moodColour (-0.10f, 0.95f).withAlpha (0.45f), plot.getRight(), 0, false);
+        g.setGradientFill (fill);
+        g.fillPath (curve (specOut, true));
+        ColourGradient fade (Colours::transparentBlack, 0, plot.getY(), colours::screen.withAlpha (0.85f), 0, plot.getBottom(), false);
+        g.setGradientFill (fade);
+        g.fillRect (plot);
+        g.setColour (moodColour (0.0f, 1.0f, 0.35f));
+        g.strokePath (curve (specOut, false), PathStrokeType (1.6f, PathStrokeType::curved, PathStrokeType::rounded));
+        g.setColour (Colours::white.withAlpha (0.40f));
         g.strokePath (curve (specIn, false), PathStrokeType (1.0f));
 
-        g.setFont (labelFont (9.0f));
-        g.setColour (colours::highCyan.withAlpha (0.8f));
-        g.drawText ("INPUT", Rectangle<float> (plot.getX() + 4, plot.getY() + 2, 60, 10), Justification::centredLeft);
-        g.setColour (colours::amberHot);
-        g.drawText ("OUTPUT", Rectangle<float> (plot.getX() + 64, plot.getY() + 2, 70, 10), Justification::centredLeft);
+        auto legend = Rectangle<float> (screen.getX() + 12, screen.getY() + 8, 200, 12);
+        g.setFont (font (9.5f, true));
+        g.setColour (Colours::white.withAlpha (0.6f));
+        g.drawText ("INPUT", legend.removeFromLeft (50), Justification::centredLeft);
+        g.setColour (moodColour (0.0f, 1.0f, 0.35f));
+        g.drawText ("OUTPUT", legend.removeFromLeft (60), Justification::centredLeft);
     }
 
     //==============================================================================
@@ -411,21 +434,21 @@ namespace hifi
         const auto c = gonio.getCentre();
         const float R = side * 0.5f;
 
-        // axes + labels
-        g.setColour (colours::amber.withAlpha (0.10f));
+        g.setColour (Colours::white.withAlpha (0.06f));
         g.drawEllipse (gonio.reduced (2.0f), 1.0f);
+        g.drawEllipse (gonio.reduced (R * 0.5f), 1.0f);
         g.drawLine (c.x, gonio.getY(), c.x, gonio.getBottom(), 1.0f);
         g.drawLine (gonio.getX(), c.y, gonio.getRight(), c.y, 1.0f);
         g.drawLine (c.x - R * 0.7f, c.y - R * 0.7f, c.x + R * 0.7f, c.y + R * 0.7f, 0.8f);
         g.drawLine (c.x + R * 0.7f, c.y - R * 0.7f, c.x - R * 0.7f, c.y + R * 0.7f, 0.8f);
-        g.setFont (labelFont (9.0f));
-        g.setColour (colours::amber.withAlpha (0.45f));
-        g.drawText ("M", Rectangle<float> (c.x - 8, gonio.getY() + 2, 16, 10), Justification::centred);
+        g.setFont (font (9.5f, true));
+        g.setColour (colours::textFaint);
+        g.drawText ("M", Rectangle<float> (c.x - 8, gonio.getY() + 3, 16, 10), Justification::centred);
         g.drawText ("L", Rectangle<float> (c.x - R * 0.72f - 14, c.y - R * 0.72f - 4, 12, 10), Justification::centred);
         g.drawText ("R", Rectangle<float> (c.x + R * 0.72f + 2, c.y - R * 0.72f - 4, 12, 10), Justification::centred);
         g.drawText ("S", Rectangle<float> (gonio.getRight() - 12, c.y - 12, 12, 10), Justification::centred);
 
-        // phosphor persistence
+        // phosphor persistence, coloured by the music
         const float scale = g.getInternalContext().getPhysicalPixelScaleFactor();
         const int px = jmax (1, roundToInt (side * scale));
         if (phosphor.isNull() || phosphor.getWidth() != px)
@@ -435,7 +458,7 @@ namespace hifi
             Graphics pg (phosphor);
             const float pr = (float) px * 0.5f;
             const float dot = jmax (1.5f, scale * 2.0f);
-            pg.setColour (colours::amberHot.withAlpha (0.8f));
+            pg.setColour (moodColour (0.0f, 1.0f, 0.45f).withAlpha (0.85f));
             for (int i = 0; i < stereoCount; ++i)
             {
                 const auto& f = stereoTmp[(size_t) i];
@@ -446,30 +469,30 @@ namespace hifi
         g.drawImage (phosphor, gonio);
 
         // correlation meter
-        auto meter = Rectangle<float> (plot.getWidth() * 0.34f, 16.0f)
-                         .withCentre ({ plot.getX() + plot.getWidth() * 0.76f, plot.getCentreY() + 8.0f });
-        drawInsetWindow (g, meter.expanded (3.0f), 3.0f);
-        g.setColour (colours::clipRed.withAlpha (0.18f));
-        g.fillRect (meter.withWidth (meter.getWidth() * 0.5f));
-        g.setColour (colours::vfdGreen.withAlpha (0.10f));
-        g.fillRect (meter.withTrimmedLeft (meter.getWidth() * 0.75f));
-        g.setFont (labelFont (9.0f));
-        for (float v : { -1.0f, -0.5f, 0.0f, 0.5f, 1.0f })
+        auto meter = Rectangle<float> (plot.getWidth() * 0.34f, 10.0f)
+                         .withCentre ({ plot.getX() + plot.getWidth() * 0.76f, plot.getCentreY() + 10.0f });
+        g.setColour (Colours::white.withAlpha (0.06f));
+        g.fillRoundedRectangle (meter, 5.0f);
+        const float mid = meter.getCentreX();
+        const float cx = meter.getX() + (jlimit (-1.0f, 1.0f, correlation) + 1.0f) * 0.5f * meter.getWidth();
+        const auto barCol = correlation < 0.0f ? colours::bad : (correlation < 0.3f ? colours::warn : colours::good);
+        g.setColour (barCol.withAlpha (0.85f));
+        g.fillRoundedRectangle (Rectangle<float> (jmin (mid, cx), meter.getY(), std::abs (cx - mid), meter.getHeight()), 5.0f);
+        drawGlow (g, { cx, meter.getCentreY() }, 14.0f, barCol.withAlpha (0.5f));
+        g.setColour (Colours::white);
+        g.fillEllipse (Rectangle<float> (12.0f, 12.0f).withCentre ({ cx, meter.getCentreY() }));
+
+        g.setFont (font (9.0f));
+        g.setColour (colours::textFaint);
+        for (float v : { -1.0f, 0.0f, 1.0f })
         {
             const float x = meter.getX() + (v + 1.0f) * 0.5f * meter.getWidth();
-            g.setColour (colours::amber.withAlpha (0.35f));
-            g.drawVerticalLine (roundToInt (x), meter.getBottom() + 3, meter.getBottom() + 7);
-            g.drawText (v > 0 ? "+" + String (v, 1) : String (v, 1), Rectangle<float> (x - 15, meter.getBottom() + 8, 30, 10), Justification::centred);
+            g.drawText (v > 0 ? "+1" : String ((int) v), Rectangle<float> (x - 15, meter.getBottom() + 6, 30, 10), Justification::centred);
         }
-        const float cx = meter.getX() + (jlimit (-1.0f, 1.0f, correlation) + 1.0f) * 0.5f * meter.getWidth();
-        g.setColour (colours::amber.withAlpha (0.35f));
-        g.fillRect (cx - 4.0f, meter.getY(), 8.0f, meter.getHeight());
-        g.setColour (correlation < 0.0f ? colours::clipRed : colours::amberHot);
-        g.fillRect (cx - 1.5f, meter.getY() - 2.0f, 3.0f, meter.getHeight() + 4.0f);
-
-        g.setColour (colours::amber.withAlpha (0.6f));
-        g.drawText ("CORRELATION", meter.withY (meter.getY() - 40).withHeight (12), Justification::centred);
-        drawVfdText (g, String (correlation, 2), meter.withY (meter.getY() - 26).withHeight (16).withSizeKeepingCentre (90, 16),
-                     correlation < 0.0f ? colours::clipRed : colours::vfd);
+        drawCaption (g, "Correlation", meter.withY (meter.getY() - 46).withHeight (12), Justification::centred, colours::textDim, 9.5f);
+        g.setColour (barCol);
+        g.setFont (font (24.0f, true));
+        g.drawText ((correlation > 0 ? "+" : "") + String (correlation, 2), meter.withY (meter.getY() - 34).withHeight (26),
+                    Justification::centred);
     }
 }

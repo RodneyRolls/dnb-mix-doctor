@@ -137,6 +137,22 @@ int main()
             CHECK (std::abs (m.getIntegrated() - (-9.0f)) < 1.5f, "output %.2f LUFS for a -9 LUFS target (last 10 s)", m.getIntegrated());
         }
 
+        // 4b. V2 maximiser: loud targets are reached and the true-peak ceiling still holds
+        for (float target : { -5.0f, -4.0f })
+        {
+            MixEngine e; e.prepare (sr, 512, 2);
+            auto b = makeMix (sr, 30.0, 0.12f);
+            EngineParams p; p.loudnessLufs = target; p.ceilingDb = -0.3f;
+            run (e, b, p);
+            LoudnessMeter m; m.prepare (sr);
+            const int start = (int) (sr * 20.0);
+            const float* rd[2] = { b.getReadPointer (0, start), b.getReadPointer (1, start) };
+            m.process (rd, 2, b.getNumSamples() - start);
+            const float tp = truePeakDb (b, start);
+            CHECK (std::abs (m.getIntegrated() - target) < 1.5f && tp <= -0.3f + 0.05f,
+                   "loud target %.1f LUFS -> %.2f LUFS, true peak %.2f dBTP (ceiling -0.3)", target, m.getIntegrated(), tp);
+        }
+
         // 5. SUB MONO removes low side content, keeps highs wide
         {
             MixEngine e; e.prepare (sr, 512, 2);

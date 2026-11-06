@@ -167,7 +167,7 @@ namespace mcdsp
         s.push_back ({ params::release,  lim (beatMs * 0.5f, 50.0f, 400.0f) });   // 1/8 note
         s.push_back ({ params::width,    r.sideToMidDb < -16.0f ? 120.0f : (r.sideToMidDb > -6.0f ? 90.0f : 105.0f) });
         s.push_back ({ params::saturate, lim (15.0f + std::max (0.0f, airDeficit) * 3.0f, 5.0f, 45.0f) });
-        s.push_back ({ params::loudness, r.lufs > -7.0f ? -6.0f : -8.0f });
+        s.push_back ({ params::loudness, r.lufs > -7.0f ? -5.0f : -6.5f });
         s.push_back ({ params::ceiling,  -0.5f });
         s.push_back ({ params::fix,      100.0f });
         s.push_back ({ params::mix,      100.0f });

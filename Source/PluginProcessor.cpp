@@ -122,7 +122,7 @@ void DnBMixDoctorProcessor::runEngine (juce::AudioBuffer<float>& buffer, bool fo
         if (visuals)
         {
             const auto* dry = engine.getAlignedDry();
-            const float gr = engine.glueGrDb + engine.limiterGrDb + engine.dynamicEqDb * 0.5f;
+            const float gr = engine.glueGrDb + engine.limiterGrDb + engine.clipDb + engine.dynamicEqDb * 0.5f;
             columns.process (dry, io, numCh, n, gr, columnFifo);
 
             constexpr int tmpSize = 256;
@@ -152,6 +152,7 @@ void DnBMixDoctorProcessor::runEngine (juce::AudioBuffer<float>& buffer, bool fo
     meters.truePeakDb.store (mcdsp::gainToDb (tpHold));
     meters.glueGrDb.store (engine.glueGrDb);
     meters.limiterGrDb.store (engine.limiterGrDb);
+    meters.clipDb.store (engine.clipDb);
     meters.autoGainDb.store (engine.autoGainDb);
 }
 
