@@ -1,4 +1,4 @@
-name: Build DnB Mix Doctor V2
+name: Build The Mix Fixer
 
 on:
   push:
@@ -14,11 +14,11 @@ jobs:
           - os: windows-latest
             name: Windows
             configure: cmake -B build -A x64
-            targets: DnBMixDoctorV2_VST3 DnBMixDoctorV2_Standalone
+            targets: TheMixFixer_VST3 TheMixFixer_Standalone
           - os: macos-latest
             name: macOS
             configure: cmake -B build -G Xcode
-            targets: DnBMixDoctorV2_VST3 DnBMixDoctorV2_AU DnBMixDoctorV2_Standalone
+            targets: TheMixFixer_VST3 TheMixFixer_AU TheMixFixer_Standalone
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -39,9 +39,9 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: DnB-Mix-Doctor-V2-${{ matrix.name }}
+          name: The-Mix-Fixer-${{ matrix.name }}
           path: |
-            build/DnBMixDoctorV2_artefacts/Release/VST3
-            build/DnBMixDoctorV2_artefacts/Release/AU
-            build/DnBMixDoctorV2_artefacts/Release/Standalone
+            build/TheMixFixer_artefacts/Release/VST3
+            build/TheMixFixer_artefacts/Release/AU
+            build/TheMixFixer_artefacts/Release/Standalone
           if-no-files-found: error

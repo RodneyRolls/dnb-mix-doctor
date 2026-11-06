@@ -86,7 +86,7 @@ private:
         float get() const noexcept { return v->load (std::memory_order_relaxed); }
     };
     P pInput, pSubMono, pSubTight, pKickBass, pPunch, pSnap, pMud, pReese, pHarsh, pAir, pGlue, pAttack, pRelease,
-      pWidth, pSaturate, pLoudness, pCeiling, pFix, pMix, pOutput, pReleaseAuto, pBypass, pOversample;
+      pWidth, pSaturate, pClipper, pLoudness, pCeiling, pFix, pMix, pOutput, pReleaseAuto, pBypass, pOversample;
 
     juce::ValueTree abOther;
     bool abOnB = false;

@@ -13,6 +13,7 @@ DnBMixDoctorProcessor::DnBMixDoctorProcessor()
     bind (pMud, params::mud);           bind (pReese, params::reese);       bind (pHarsh, params::harsh);
     bind (pAir, params::air);           bind (pGlue, params::glue);         bind (pAttack, params::attack);
     bind (pRelease, params::release);   bind (pWidth, params::width);       bind (pSaturate, params::saturate);
+    bind (pClipper, params::clipper);
     bind (pLoudness, params::loudness); bind (pCeiling, params::ceiling);   bind (pFix, params::fix);
     bind (pMix, params::mix);           bind (pOutput, params::output);     bind (pReleaseAuto, params::releaseAuto);
     bind (pBypass, params::bypass);     bind (pOversample, params::oversample);
@@ -56,6 +57,7 @@ mcdsp::EngineParams DnBMixDoctorProcessor::readParams() const noexcept
     p.glue = pGlue.get() * 0.01f;        p.attackMs = pAttack.get();
     p.releaseMs = pRelease.get();        p.releaseAuto = pReleaseAuto.get() > 0.5f;
     p.width = pWidth.get() * 0.01f;      p.saturate = pSaturate.get() * 0.01f;
+    p.clipper = pClipper.get() * 0.01f;
     p.loudnessLufs = pLoudness.get();    p.ceilingDb = pCeiling.get();
     p.fix = pFix.get() * 0.01f;          p.mix = pMix.get() * 0.01f;
     p.outputDb = pOutput.get();
@@ -80,7 +82,7 @@ void DnBMixDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
             if (playing && ! wasPlaying) { engine.resetLoudness(); outLoud.resetIntegrated(); tpHold = 0; }
             wasPlaying = playing;
         }
-    if (meters.resetRequested.exchange (false)) { outLoud.resetIntegrated(); tpHold = 0; }
+    if (meters.resetRequested.exchange (false)) { outLoud.resetIntegrated(); engine.resetLoudness(); engine.relearnLoudness(); tpHold = 0; }
 
     autoFix.process (buffer.getArrayOfReadPointers(), juce::jmin (2, buffer.getNumChannels()), buffer.getNumSamples());
 

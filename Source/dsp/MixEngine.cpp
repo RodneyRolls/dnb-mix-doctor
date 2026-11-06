@@ -81,7 +81,7 @@ namespace mcdsp
         oversampler->initProcessing ((size_t) maxBlock);
 
         lookahead = std::max (8, (int) std::lround (0.0015 * sr));
-        // V2 maximiser: fast program-dependent release (25 ms for peaks, 250 ms when limiting is sustained)
+        // maximiser: fast program-dependent release (25 ms for peaks, 250 ms when limiting is sustained)
         limiterBase.prepare (sr, lookahead, true, 0.025, 0.25);
         limiterOs.prepare (sr * 4.0, lookahead * 4 + 1, false, 0.025, 0.25);   // (4L+1)-1 = 4L samples at 4x == L at 1x
         dcBase.setup (sr);
@@ -140,7 +140,8 @@ namespace mcdsp
         firstBlock = true;
         dryDelay.reset(); padDelayBase.reset(); padDelayOs.reset();
         preLoud.resetAll(); postLoud.resetAll();
-        autoGainCur = loudCorrection = 0;
+        autoGainCur = lossDb = quietTime = 0;
+        refLufs = -100.0f;
         modeFade = 1.0f;
     }
 
@@ -456,10 +457,10 @@ namespace mcdsp
 
     float MixEngine::clipThresholdDb (const EngineParams& p) noexcept
     {
-        // The louder the target, the closer the clipper sits to the ceiling: at -12 LUFS it only touches
-        // peaks 3 dB over the ceiling (the limiter does the work); from -5 LUFS up it shaves every peak
-        // that would push the limiter by more than ~0.3 dB, which is where the extra loudness comes from.
-        const float head = std::clamp (juce::jmap (p.loudnessLufs, -12.0f, -5.0f, 3.0f, 0.3f), 0.3f, 3.0f);
+        // CLIPPER knob: 0 % = off (threshold far above anything), 100 % = clipper sits 0.1 dB over the ceiling
+        // and takes almost every peak off before the limiter (loudest, most aggressive). Independent of LOUDNESS.
+        if (p.clipper <= 0.001f) return 60.0f;
+        const float head = 6.0f - 5.9f * std::pow (std::clamp (p.clipper, 0.0f, 1.0f), 0.7f);
         return p.ceilingDb + head;
     }
 
@@ -482,17 +483,32 @@ namespace mcdsp
 
     void MixEngine::updateAutoGain (const EngineParams& p, int n) noexcept
     {
+        // Stable auto-gain. The gain is set from the loudness of the LOUD sections of the track (the drops),
+        // not from a running integrated average, so it does not creep down as more loud material plays and
+        // does not jump up in breakdowns.
+        //  - refLufs follows the input's short-term (3 s) loudness upward within ~1.5 s, then holds. It only
+        //    sinks (0.05 dB/s) after 30 s without loud material, so a new, quieter song is still picked up.
+        //  - lossDb makes up the loudness the clipper/limiter shave off. It only adapts while a loud section
+        //    plays, compares short-term (not integrated) output loudness, is rate-limited and bounded to
+        //    0..+8 dB: no wind-up, no slow downward drift.
+        const float dt = (float) (n / sr);
         const float st = preLoud.getShortTerm();
-        const float integ = preLoud.getIntegrated();
         if (st > -45.0f)
         {
-            const float measured = integ > -70.0f ? integ : st;
-            const float outInt = postLoud.getIntegrated();
-            if (outInt > -70.0f)   // slow closed-loop trim so the *output* lands on target despite limiting
-                loudCorrection = std::clamp (loudCorrection + std::clamp (p.loudnessLufs - outInt, -1.0f, 1.0f) * 0.5f * (float) (n / sr),
-                                             -9.0f, 9.0f);
-            const float target = std::clamp (p.loudnessLufs - measured + loudCorrection, -12.0f, 30.0f);
-            autoGainCur += (target - autoGainCur) * (1.0f - onePoleCoef (0.4, sr / n));
+            if (refLufs < -90.0f)            refLufs = st;
+            else if (st > refLufs)           refLufs += (st - refLufs) * (1.0f - std::exp (-dt / 1.5f));
+
+            if (st > refLufs - 1.5f)         quietTime = 0.0f;
+            else if ((quietTime += dt) > 30.0f) refLufs -= 0.05f * dt;
+
+            if (st > refLufs - 1.0f)
+            {
+                const float outSt = postLoud.getShortTerm();
+                if (outSt > -45.0f)
+                    lossDb = std::clamp (lossDb + std::clamp (p.loudnessLufs - outSt, -3.0f, 3.0f) * 0.5f * dt, 0.0f, 8.0f);
+            }
+            const float target = std::clamp (p.loudnessLufs - refLufs + lossDb, -12.0f, 30.0f);
+            autoGainCur += (target - autoGainCur) * (1.0f - std::exp (-dt / 0.5f));
         }
         autoGainDb = autoGainCur;
     }

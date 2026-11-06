@@ -9,7 +9,7 @@ namespace
     const Rectangle<int> headerArea { 24, 6, 1252, 46 };
     const Rectangle<int> visArea { 236, 100, 828, 272 };
     const Rectangle<int> sectionArea[2] = { { 24, 378, 1252, 148 }, { 24, 530, 1252, 148 } };
-    constexpr int knobsX = 40, knobsW = 1220, rowY[2] = { 384, 536 }, rowH = 140;
+    constexpr int numKnobs = 21, knobsX = 40, knobsW = 1220, rowY[2] = { 384, 536 }, rowH = 140, knobSize = 104;
     constexpr int favouriteIdOffset = 1000;
 
     float easeInOut (float t) { return t < 0.5f ? 4.0f * t * t * t : 1.0f - std::pow (-2.0f * t + 2.0f, 3.0f) * 0.5f; }
@@ -27,7 +27,7 @@ DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
     for (auto* b : { &powerButton, &autoFixButton, &prevButton, &nextButton, &starButton, &menuButton,
                      &folderButton, &abButton, &releaseAutoButton })
         panel.addAndMakeVisible (b);
-    for (auto* c : std::initializer_list<Component*> { &presetBox, &cpuDisplay, &visualizer, &gaugeLeft, &gaugeRight,
+    for (auto* c : std::initializer_list<Component*> { &presetBox, &cpuDisplay, &visualizer, &vuLeft, &vuRight,
                                                         &lufsIntDisplay, &lufsShortDisplay, &truePeakDisplay, &grDisplay })
         panel.addAndMakeVisible (c);
 
@@ -36,7 +36,7 @@ DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
     releaseAutoButton.setClickingTogglesState (true);
 
     // ---- knobs
-    for (int i = 0; i < 20; ++i)
+    for (int i = 0; i < numKnobs; ++i)
     {
         auto& k = knobs[(size_t) i];
         const auto& id = params::knobOrder[i];
@@ -83,17 +83,15 @@ DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
 
     visualizer.onFrame = [this] (double dt)
     {
-        const auto mood = visualizer.getMoodColour();
-        for (auto* gauge : { &gaugeLeft, &gaugeRight }) gauge->setAccent (mood);
-        gaugeLeft.setLevel (visualizer.getRmsL());
-        gaugeRight.setLevel (visualizer.getRmsR());
-        gaugeLeft.tick (dt);
-        gaugeRight.tick (dt);
+        vuLeft.setLevel (visualizer.getRmsL());
+        vuRight.setLevel (visualizer.getRmsR());
+        vuLeft.tick (dt);
+        vuRight.tick (dt);
     };
 
     layout();
     refreshPresetBox();
-    gaugeLeft.referenceDbfs = gaugeRight.referenceDbfs = proc.apvts.getRawParameterValue (params::loudness)->load();
+    vuLeft.referenceDbfs = vuRight.referenceDbfs = proc.apvts.getRawParameterValue (params::loudness)->load();
 
     // resizing: aspect ratio locked, whole panel scaled
     setResizable (true, true);
@@ -140,21 +138,22 @@ void DnBMixDoctorEditor::layout()
 
     // display + meters
     visualizer.setBounds (visArea);
-    gaugeLeft.setBounds (40, 100, 188, 142);
-    gaugeRight.setBounds (1072, 100, 188, 142);
+    vuLeft.setBounds (40, 100, 188, 142);
+    vuRight.setBounds (1072, 100, 188, 142);
     lufsIntDisplay.setBounds (40, 248, 188, 60);
     lufsShortDisplay.setBounds (40, 312, 188, 60);
     truePeakDisplay.setBounds (1072, 248, 188, 60);
     grDisplay.setBounds (1072, 312, 188, 60);
 
-    // 2 x 10 knobs, label above each knob
-    const int cellW = knobsW / 10;
-    for (int i = 0; i < 20; ++i)
+    // 21 knobs on an 11-column grid: row 1 (10 knobs) sits half a cell in, row 2 has 11
+    const int cellW = knobsW / 11, x0 = knobsX + (knobsW - cellW * 11) / 2;
+    for (int i = 0; i < numKnobs; ++i)
     {
-        const int row = i / 10, c = i % 10;
-        const Rectangle<int> cell (knobsX + c * cellW, rowY[row], cellW, rowH);
+        const int row = i < 10 ? 0 : 1, c = row == 0 ? i : i - 10;
+        const int x = x0 + c * cellW + (row == 0 ? cellW / 2 : 0);
+        const Rectangle<int> cell (x, rowY[row], cellW, rowH);
         knobCells[(size_t) i] = cell;
-        knobs[(size_t) i].setBounds (cell.withTrimmedTop (18).withHeight (112).withSizeKeepingCentre (112, 112));
+        knobs[(size_t) i].setBounds (cell.withTrimmedTop (20).withHeight (knobSize).withSizeKeepingCentre (knobSize, knobSize));
     }
     const auto relCell = knobCells[12];
     releaseAutoButton.setBounds (relCell.getCentreX() - 26, relCell.getBottom() - 21, 52, 19);
@@ -188,33 +187,17 @@ void DnBMixDoctorEditor::Panel::renderBackground (float scale)
     g.setColour (Colours::white.withAlpha (0.06f));
     g.fillRect (1088.0f, 16.0f, 1.0f, 26.0f);
 
-    // ---- title: wordmark + V2 badge
-    {
-        const auto titleFont = mcui::font (25.0f, true).withExtraKerningFactor (0.10f);
-        const String title ("DnB MIX DOCTOR");
-        const float tw = mcui::textWidth (titleFont, title);
-        const float badgeW = 38.0f, gap = 12.0f;
-        const float x0 = ((float) W - (tw + gap + badgeW)) * 0.5f;
-        g.setFont (titleFont);
-        g.setColour (col::text);
-        g.drawText (title, Rectangle<float> (x0, 56.0f, tw + 4.0f, 30.0f), Justification::centredLeft, false);
-
-        const auto badge = Rectangle<float> (x0 + tw + gap, 60.0f, badgeW, 22.0f);
-        mcui::drawGlow (g, badge.getCentre(), 34.0f, col::violet.withAlpha (0.35f));
-        g.setGradientFill (mcui::accentGradient (badge.getTopLeft(), badge.getBottomRight()));
-        g.fillRoundedRectangle (badge, 11.0f);
-        g.setColour (Colours::white);
-        g.setFont (mcui::font (13.0f, true));
-        g.drawText ("V2", badge, Justification::centred, false);
-
-        mcui::drawCaption (g, "Drum & bass mix repair  +  loudness maximizer", { 0.0f, 84.0f, (float) W, 12.0f },
-                           Justification::centred, col::textFaint, 9.0f);
-    }
+    // ---- title: the original wordmark face
+    g.setFont (mcui::retroFont (27.0f, true).withExtraKerningFactor (0.18f));
+    g.setColour (col::text);
+    g.drawText ("THE MIX FIXER", Rectangle<float> (0.0f, 54.0f, (float) W, 32.0f), Justification::centred, false);
+    mcui::drawCaption (g, "Drum & bass mix repair  +  loudness maximizer", { 0.0f, 84.0f, (float) W, 12.0f },
+                       Justification::centred, col::textFaint, 9.0f);
     mcui::drawCaption (g, "Presets", { 92.0f, 60.0f, 80.0f, 32.0f });
     mcui::drawCaption (g, "Compare", { 1120.0f, 60.0f, 84.0f, 32.0f }, Justification::centredRight);
 
     // ---- knob labels, centred above each knob
-    for (int i = 0; i < 20; ++i)
+    for (int i = 0; i < numKnobs; ++i)
         mcui::drawCaption (g, params::knobLabels[i], owner.knobCells[(size_t) i].withHeight (16).toFloat(),
                            Justification::centred, col::textDim, 10.0f);
 
@@ -233,7 +216,7 @@ void DnBMixDoctorEditor::Panel::renderBackground (float scale)
         g.setFont (badgeFont);
         g.drawText (maker, badge.withTrimmedLeft (16.0f), Justification::centredLeft, false);
     }
-    mcui::drawCaption (g, "v2.0", { 1180.0f, 683.0f, 64.0f, 14.0f }, Justification::centredRight, col::textFaint, 9.5f);
+    mcui::drawCaption (g, "v1.0", { 1180.0f, 683.0f, 64.0f, 14.0f }, Justification::centredRight, col::textFaint, 9.5f);
 }
 
 void DnBMixDoctorEditor::Panel::paint (Graphics& g)
@@ -292,7 +275,7 @@ void DnBMixDoctorEditor::timerCallback()
     truePeakDisplay.setValueColour (m.truePeakDb.load() > ceilingDb + 0.05f ? col::bad : col::text);
 
     // gauges read 0 dB when the level sits on the LOUDNESS target
-    gaugeLeft.referenceDbfs = gaugeRight.referenceDbfs = proc.apvts.getRawParameterValue (params::loudness)->load();
+    vuLeft.referenceDbfs = vuRight.referenceDbfs = proc.apvts.getRawParameterValue (params::loudness)->load();
 
     abButton.setText (proc.isOnB() ? "B" : "A");
     abButton.setToggleState (proc.isOnB(), dontSendNotification);
@@ -390,9 +373,9 @@ void DnBMixDoctorEditor::showMainMenu()
 {
     PopupMenu menu;
     const bool os = proc.apvts.getParameter (params::oversample)->getValue() > 0.5f;
-    menu.addSectionHeader ("DnB Mix Doctor V2  2.0  -  Mod Con DSP");
+    menu.addSectionHeader ("The Mix Fixer  1.0  -  Mod Con DSP");
     menu.addItem (1, "4x oversampling (saturation + limiter)", true, os);
-    menu.addItem (2, "Reset loudness / true-peak meters");
+    menu.addItem (2, "Reset meters + re-learn loudness (new song)");
     menu.addItem (3, String ("Switch to ") + (proc.isOnB() ? "A" : "B") + " (compare)");
     menu.addSeparator();
     menu.addItem (4, "Run auto-fix (listens for 8 bars)");

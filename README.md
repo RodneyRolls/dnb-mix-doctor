@@ -1,28 +1,30 @@
-# DnB Mix Doctor V2 — Mod Con DSP
+# The Mix Fixer — Mod Con DSP
 
 A one-stop mix repair processor for drum & bass (160–178 BPM). Put it on the master or a drum/bass bus:
 it fixes phasey sub, kick/bass clashes, weak transients, mud, reese resonances, harsh highs, dull top end,
 uncontrolled width and low loudness, and finishes with a clipper + true-peak limiter loudness maximizer.
+The Mix Fixer is the successor to DnB Mix Doctor V1/V2.
 
 VST3 (Windows + macOS), AU (macOS) and Standalone. JUCE 9.0.5, C++17, CMake.
 
-Plugin codes: manufacturer **Mod Con DSP** / `MCDS`, plugin `DnM2`.
+Plugin codes: manufacturer **Mod Con DSP** / `MCDS`, plugin `MxFx`, bundle `com.modcondsp.themixfixer`
+(its own identity, so it installs next to DnB Mix Doctor V1 and V2).
 
-## What's new in V2
-- **Modern UI:** dark graphite surfaces, rounded cards, a cyan → violet accent, values shown inside the knobs,
-  arc level gauges and segmented display tabs. Same 1300×700 layout, resizable with a locked aspect ratio.
+## Highlights
+- **Modern UI** with dark graphite cards, a cyan → violet accent and values shown inside the knobs. The wordmark
+  and the two analogue VU meters use the original V1 design. The VU faces are lit white and glow red as the
+  level climbs past 0 VU (0 VU = the LOUDNESS target).
 - **Music-reactive waveform:** each waveform column is tinted by its own spectral balance and brightened by its
   level, around a "mood" hue that follows the track. Sub-heavy rollers glow violet, reese-heavy neuro and punchy
-  drums push toward magenta/pink, and bright liquid sits in cyan/teal. The spectrum, goniometer, level gauges and
-  the display's ambient light follow the same colour.
-- **Louder maximizer:** LOUDNESS now goes up to −3 LUFS (V1: −4) and defaults to −7 LUFS (V1: −9).
-  - A 4× oversampled soft clipper shaves peaks before the limiter. It moves closer to the ceiling the louder
-    the target is.
-  - The limiter's release is program-dependent: 25 ms on peaks, 250 ms when limiting is sustained.
-  - Auto-gain can add up to +30 dB, and 4× oversampling is on by default.
-  - Factory presets are 1.5–2 LU louder.
-- **Separate plugin:** V2 has its own plugin code (`DnM2`) and bundle ID (`com.modcondsp.dnbmixdoctorv2`), so
-  it installs next to V1.
+  drums push toward magenta/pink, and bright liquid sits in cyan/teal. The spectrum, goniometer and the display's
+  ambient light follow the same colour.
+- **Separate CLIPPER and LOUDNESS knobs:**
+  - CLIPPER sets how hard a 4× oversampled soft clipper shaves peaks before the limiter (0 % = off).
+  - LOUDNESS sets how loud the drops end up (−14…−3 LUFS).
+- **Stable loudness (no volume drift):** auto-gain learns the loudness of the loud sections and then holds it.
+  The level does not sink as more of the track plays, does not jump in breakdowns, and does not change when you
+  press play. Use *Menu → Reset meters + re-learn loudness* (or click the INTEGRATED readout) when you switch to
+  a different song.
 
 ## Build
 
@@ -36,9 +38,9 @@ You need CMake 3.22+ and Git. The first configure downloads JUCE 9.0.5 automatic
 or by hand:
 
     cmake -B build -G "Visual Studio 17 2022" -A x64
-    cmake --build build --config Release --target DnBMixDoctorV2_VST3 DnBMixDoctorV2_Standalone
+    cmake --build build --config Release --target TheMixFixer_VST3 TheMixFixer_Standalone
 
-Copy `build\DnBMixDoctor_artefacts\Release\VST3\DnB Mix Doctor.vst3` to `C:\Program Files\Common Files\VST3\`.
+Copy `build\TheMixFixer_artefacts\Release\VST3\The Mix Fixer.vst3` to `C:\Program Files\Common Files\VST3\`.
 
 **macOS** (Xcode 14+; builds a universal arm64 + x86_64 binary):
 
@@ -47,7 +49,7 @@ Copy `build\DnBMixDoctor_artefacts\Release\VST3\DnB Mix Doctor.vst3` to `C:\Prog
 or by hand:
 
     cmake -B build -G Xcode
-    cmake --build build --config Release --target DnBMixDoctorV2_VST3 DnBMixDoctorV2_AU DnBMixDoctorV2_Standalone
+    cmake --build build --config Release --target TheMixFixer_VST3 TheMixFixer_AU TheMixFixer_Standalone
 
 Copy the `.vst3` to `~/Library/Audio/Plug-Ins/VST3/` and the `.component` to `~/Library/Audio/Plug-Ins/Components/`.
 For distribution, sign and notarise the bundles (`codesign` + `notarytool`).
@@ -59,7 +61,7 @@ For distribution, sign and notarise the bundles (`codesign` + `notarytool`).
     cmake --build build --config Release --target DnBMixDoctorTests
     build/DnBMixDoctorTests_artefacts/Release/DnBMixDoctorTests
 
-Checks, at 44.1/48/96/192 kHz: dry/wet latency alignment, wet impulse alignment in both oversampling modes,
+Checks, at 44.1/48/96/192 kHz: dry/wet latency alignment, level stability across intro → drop → breakdown → drop, wet impulse alignment in both oversampling modes,
 true-peak ceiling on a hot mix, loudness landing on target (including -5 and -4 LUFS with a -0.3 dBTP ceiling), sub-mono side removal, mono layout, and CPU use.
 
     cmake --build build --config Release --target DnBMixDoctorSnapshot
@@ -89,7 +91,8 @@ Renders the editor (WAVE / SPECTRUM / STEREO) to PNG with synthetic DnB audio fl
 | GLUE / ATTACK / RELEASE | Stereo-linked soft-knee bus compressor; AUTO release adapts 60–900 ms to how hard it's working |
 | WIDTH | Side gain above the SUB MONO frequency, 0–200 % (lows stay mono) |
 | SATURATE | Asymmetric tanh tape/valve stage (2nd + 3rd harmonics), unity small-signal gain |
-| LOUDNESS | Target loudness −14…−3 LUFS (default −7). Gain into the clipper + limiter = target − integrated input loudness, plus a slow closed-loop trim from the measured output loudness. The louder the target, the closer the soft clipper sits to the ceiling |
+| CLIPPER | Soft clipper (tanh knee, 4x oversampled) in front of the limiter. 0 % = off; higher settings move its threshold from 6 dB over the ceiling down to 0.1 dB over it, so it takes more of the peaks off and the limiter works less. Louder and punchier, but grittier at high settings |
+| LOUDNESS | How loud the loud sections (drops) come out, −14…−3 LUFS short-term (default −7). Auto-gain learns the input loudness of the loud sections and holds it, plus a bounded make-up for what the clipper and limiter take off. It does not follow the running average, so the level stays put across the song |
 | CEILING | True-peak ceiling −3…0 dBTP |
 | FIX AMOUNT | Macro that scales every corrective module (everything from SUB MONO to SATURATE) 0–100 % |
 | MIX | Dry/wet with the dry path delayed to match the latency |
@@ -98,9 +101,8 @@ Renders the editor (WAVE / SPECTRUM / STEREO) to PNG with synthetic DnB audio fl
 ### DSP notes
 - **Crossovers:** 4th-order Linkwitz-Riley (TPT form), recombined by summing — magnitude-flat, phase-coherent.
 - **Dynamic EQ:** Cytomic/Simper trapezoidal SVF bells re-tuned every 32 samples (modulation-safe, no zipper).
-- **Clipper:** soft clipper with a tanh knee (linear below 60 % of its threshold) in front of the limiter. It runs
-  at 4x when oversampling is on. Its threshold sits 3 dB over the ceiling at −12 LUFS and 0.3 dB over it from
-  −5 LUFS up.
+- **Clipper:** soft clipper with a tanh knee (linear below 60 % of its threshold) in front of the limiter. It runs at
+  4x when oversampling is on. The CLIPPER knob places its threshold between 6 dB and 0.1 dB over the ceiling.
 - **Limiter:** look-ahead (1.5 ms) sliding-minimum gain computer + moving-average attack, so it cannot overshoot
   and doesn't distort. The release is program-dependent: 25 ms back to the sustained gain level, then 250 ms to
   unity. True-peak detection uses a 4x polyphase windowed-sinc interpolator (BS.1770-style).
@@ -126,15 +128,15 @@ it's listening to cancel. The reference curve is an engineering estimate, not me
 ### Presets
 Factory: Default, Liquid Polish, Neuro Smash, Jump Up Bounce, Rollers Sub Fix, Jungle Breaks, Club Loud,
 Gentle Master Assist. User presets save as `.mcdpreset` files in
-`%APPDATA%\Mod Con DSP\DnB Mix Doctor V2\Presets` (Windows) or
-`~/Library/Application Support/Mod Con DSP/DnB Mix Doctor V2/Presets` (macOS). The star marks favourites; A/B swaps
+`%APPDATA%\Mod Con DSP\The Mix Fixer\Presets` (Windows) or
+`~/Library/Application Support/Mod Con DSP/The Mix Fixer/Presets` (macOS). The star marks favourites; A/B swaps
 two complete settings without touching the power switch or oversampling mode.
 
 ## Source layout
 
     Source/Params.h                 parameter IDs, ranges, layout
     Source/PluginProcessor.*        host glue, metering, visual FIFOs, A/B, state
-    Source/PluginEditor.*           1300x700 editor (scaled, aspect-locked), top bar, presets, auto-fix sweep
+    Source/PluginEditor.*           1300x700 editor (scaled, aspect-locked), 21 knobs, top bar, presets, auto-fix sweep
     Source/PresetManager.*          factory/user presets, favourites
     Source/dsp/MixEngine.*          the full signal chain
     Source/dsp/TruePeakLimiter.h    look-ahead true-peak limiter
@@ -144,7 +146,7 @@ two complete settings without touching the power switch or oversampling mode.
     Source/analysis/AutoFix.*       8-bar analyser and suggestion mapping
     Source/ui/Theme.*               colours, fonts, card/glow helpers, LookAndFeel (knobs, combo, menus)
     Source/ui/Widgets.h             knob (fine drag), icon buttons with status LEDs, numeric readouts
-    Source/ui/LevelGauge.h          arc level gauge relative to the loudness target
+    Source/ui/VUMeter.h             analogue VU meter (white face, glows red when hot), damped needle
     Source/ui/Visualizer.*          WAVE / SPECTRUM / STEREO display with music-reactive colour
     tests/EngineTests.cpp           offline DSP checks
     tests/UISnapshot.cpp            editor-to-PNG renderer

@@ -27,6 +27,9 @@ namespace mcui
     /** Clean geometric sans: Inter / SF Pro / Segoe UI / Helvetica Neue, whichever exists. */
     juce::Font font (float height, bool bold = false);
 
+    /** The original V1 face (Eurostile / Microgramma style, Bahnschrift on Windows): wordmark and VU meters. */
+    juce::Font retroFont (float height, bool bold = false);
+
     /** Width of a string in the given font. */
     float textWidth (const juce::Font&, const juce::String&);
 

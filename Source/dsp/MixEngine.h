@@ -11,7 +11,7 @@ namespace mcdsp
     {
         float inputDb = 0, subMonoHz = 100, subTight = 0.2f, kickBass = 0.2f, punch = 0.2f, snap = 0.15f,
               mud = 0.25f, reese = 0.2f, harsh = 0.25f, air = 0.2f, glue = 0.25f, attackMs = 10, releaseMs = 150,
-              width = 1.0f, saturate = 0.15f, loudnessLufs = -7, ceilingDb = -1, fix = 1.0f, mix = 1.0f, outputDb = 0;
+              width = 1.0f, saturate = 0.15f, clipper = 0.3f, loudnessLufs = -7, ceilingDb = -1, fix = 1.0f, mix = 1.0f, outputDb = 0;
         bool releaseAuto = true, bypass = false, oversample = true;
     };
 
@@ -39,7 +39,10 @@ namespace mcdsp
         /** The latency-aligned dry input of the last processed block (for metering / visuals). */
         const float* const* getAlignedDry() const noexcept { return dryPtrs; }
 
-        void resetLoudness() noexcept { preLoud.resetIntegrated(); postLoud.resetIntegrated(); loudCorrection = 0; }
+        /** Restarts the integrated meters only; the learned auto-gain is kept, so pressing play never changes the level. */
+        void resetLoudness() noexcept { preLoud.resetIntegrated(); postLoud.resetIntegrated(); }
+        /** Forgets the learned loudness (new song): auto-gain re-learns from the next loud section. */
+        void relearnLoudness() noexcept { refLufs = -100.0f; lossDb = quietTime = 0.0f; }
 
         // meter values from the last block (audio thread writes, processor publishes)
         float glueGrDb = 0, limiterGrDb = 0, autoGainDb = 0, dynamicEqDb = 0, clipDb = 0;
@@ -113,6 +116,6 @@ namespace mcdsp
         TruePeakLimiter limiterBase, limiterOs, limiterOsCatch;
         DcBlocker dcBase, dcOs;
         LoudnessMeter preLoud, postLoud;
-        float autoGainCur = 0, loudCorrection = 0;
+        float autoGainCur = 0, refLufs = -100.0f, lossDb = 0, quietTime = 0;
     };
 }

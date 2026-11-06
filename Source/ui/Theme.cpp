@@ -23,6 +23,20 @@ namespace mcui
         return Font (FontOptions (faceName(), height, bold ? Font::bold : Font::plain));
     }
 
+    Font retroFont (float height, bool bold)
+    {
+        static const String name = []
+        {
+            const auto all = Font::findAllTypefaceNames();
+            for (auto* candidate : { "Eurostile", "Eurostile LT Std", "Microgramma", "Michroma", "Bahnschrift",
+                                     "Avenir Next Condensed", "DIN Alternate", "Futura", "Arial" })
+                if (all.contains (candidate))
+                    return String (candidate);
+            return Font::getDefaultSansSerifFontName();
+        }();
+        return Font (FontOptions (name, height, bold ? Font::bold : Font::plain).withKerningFactor (0.10f));
+    }
+
     float textWidth (const Font& f, const String& s)
     {
         return GlyphArrangement::getStringWidth (f, s);

@@ -3,7 +3,7 @@
 #include "PluginProcessor.h"
 #include "ui/Theme.h"
 #include "ui/Widgets.h"
-#include "ui/LevelGauge.h"
+#include "ui/VUMeter.h"
 #include "ui/Visualizer.h"
 
 /** 1300 x 700 design-size editor. Everything lives in `panel`, which is scaled with an affine transform
@@ -61,12 +61,12 @@ private:
     mcui::Readout cpuDisplay { {}, "% CPU" };
 
     mcui::Visualizer visualizer { proc };
-    mcui::LevelGauge gaugeLeft { "Left" }, gaugeRight { "Right" };
+    mcui::VUMeter vuLeft { "LEFT" }, vuRight { "RIGHT" };
     mcui::Readout lufsIntDisplay { "Integrated", "LUFS" }, lufsShortDisplay { "Short-term", "LUFS" },
                   truePeakDisplay { "True peak", "dBTP" }, grDisplay { "Gain reduction", "dB" };
 
-    std::array<mcui::Knob, 20> knobs;
-    std::array<juce::Rectangle<int>, 20> knobCells;
+    std::array<mcui::Knob, 21> knobs;
+    std::array<juce::Rectangle<int>, 21> knobCells;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> sliderAttachments;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> releaseAutoAttachment;
 

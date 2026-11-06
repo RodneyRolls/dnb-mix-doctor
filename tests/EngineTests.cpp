@@ -137,7 +137,38 @@ int main()
             CHECK (std::abs (m.getIntegrated() - (-9.0f)) < 1.5f, "output %.2f LUFS for a -9 LUFS target (last 10 s)", m.getIntegrated());
         }
 
-        // 4b. V2 maximiser: loud targets are reached and the true-peak ceiling still holds
+        // 4a. volume stability over a song: intro -> drop -> breakdown -> drop. Both drops must come out at the
+        //     same level (no downward drift as more loud material plays) and the level must not sag within a drop.
+        {
+            MixEngine e; e.prepare (sr, 512, 2);
+            const double secs[] = { 8.0, 20.0, 10.0, 20.0 };
+            const float gains[] = { 0.03f, 0.12f, 0.03f, 0.12f };
+            juce::AudioBuffer<float> b (2, 0);
+            std::vector<int> starts;
+            for (int s = 0; s < 4; ++s)
+            {
+                auto part = makeMix (sr, secs[s], gains[s]);
+                starts.push_back (b.getNumSamples());
+                b.setSize (2, b.getNumSamples() + part.getNumSamples(), true);
+                for (int ch = 0; ch < 2; ++ch) b.copyFrom (ch, starts.back(), part, ch, 0, part.getNumSamples());
+            }
+            EngineParams p; p.loudnessLufs = -7.0f; p.ceilingDb = -0.5f;
+            run (e, b, p);
+            auto lufs = [&] (double fromS, double toS)
+            {
+                LoudnessMeter m; m.prepare (sr);
+                const int a = (int) (fromS * sr), n = (int) ((toS - fromS) * sr);
+                const float* rd[2] = { b.getReadPointer (0, a), b.getReadPointer (1, a) };
+                m.process (rd, 2, n);
+                return m.getIntegrated();
+            };
+            const double d1 = starts[1] / sr, d2 = starts[3] / sr;
+            const float drop1Late = lufs (d1 + 12.0, d1 + 20.0), drop2Early = lufs (d2 + 3.0, d2 + 10.0), drop2Late = lufs (d2 + 12.0, d2 + 20.0);
+            CHECK (std::abs (drop1Late - drop2Late) < 0.6f && std::abs (drop2Early - drop2Late) < 0.6f && std::abs (drop2Late - (-7.0f)) < 1.5f,
+                   "stable level: drop 1 %.2f, drop 2 early %.2f / late %.2f LUFS (target -7)", drop1Late, drop2Early, drop2Late);
+        }
+
+        // 4b. maximiser: loud targets are reached and the true-peak ceiling still holds
         for (float target : { -5.0f, -4.0f })
         {
             MixEngine e; e.prepare (sr, 512, 2);
