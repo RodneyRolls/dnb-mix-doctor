@@ -61,6 +61,16 @@ namespace mcui
         return (0.5f * wm + wh) / sum;
     }
 
+    Colour Visualizer::loudnessColour (float peak) noexcept
+    {
+        // -24 dBFS and below = yellow, then round the colour wheel (green, cyan, blue, violet, magenta)
+        // to red at 0 dBFS
+        const float db = Decibels::gainToDecibels (peak, -100.0f);
+        const float t = jlimit (0.0f, 1.0f, (db + 24.0f) / 24.0f);
+        const float hue = std::fmod ((60.0f + 300.0f * t) / 360.0f, 1.0f);
+        return Colour::fromHSV (hue, 0.92f, 1.0f, 1.0f);
+    }
+
     Colour Visualizer::moodColour (float hueOffset, float brightness, float saturation) const noexcept
     {
         float h = std::fmod (moodHue + hueOffset, 1.0f);
@@ -286,16 +296,16 @@ namespace mcui
             const auto& col = cols[(size_t) idx];
             const float y1 = yFor (col.outMax), y2 = yFor (col.outMin);
             const float x = plot.getX() + c * colW;
-            const float peak = jmax (std::abs (col.outMax), std::abs (col.outMin));
-            const float offset = -jlimit (-0.35f, 0.35f, colTone[(size_t) idx] - moodTone) * 0.45f;
-            const auto colour = moodColour (offset, 0.42f + 0.58f * jmin (1.0f, peak / 0.85f), 0.62f + 0.25f * (1.0f - colTone[(size_t) idx]));
-            g.setColour (colour.withAlpha (0.92f));
+            // colour by the slice's RMS (+6 dB so a full-scale sine reads ~0 dB): shows loud vs quiet parts even on
+            // a heavily limited master, where nearly every peak sits at the ceiling
+            const float level = 2.0f * jmax (col.rmsL, col.rmsR);
+            g.setColour (loudnessColour (level).withAlpha (0.92f));
             g.fillRect (x, y1, colW + 0.5f, jmax (1.0f, y2 - y1));
             if (c == 0) { topEdge.startNewSubPath (x, y1); bottomEdge.startNewSubPath (x, y2); }
             else        { topEdge.lineTo (x, y1);          bottomEdge.lineTo (x, y2); }
         }
         // bright rim along the envelope + soft bloom through the centre
-        const auto rim = moodColour (0.0f, 1.0f, 0.25f).withAlpha (0.75f);
+        const auto rim = Colours::white.withAlpha (0.45f);
         g.setColour (rim);
         g.strokePath (topEdge, PathStrokeType (1.0f));
         g.strokePath (bottomEdge, PathStrokeType (1.0f));
@@ -346,6 +356,20 @@ namespace mcui
             g.drawDashedLine (Line<float> (plot.getX(), yFor (s), plot.getRight(), yFor (s)), dash, 2, clipped ? 1.5f : 1.0f);
         g.setFont (font (9.0f, true));
         g.drawText ("0 dBFS", Rectangle<float> (plot.getX() + 2, yFor (-1.0f) + 2, 48, 10), Justification::centredLeft);
+
+        // colour key: quiet (yellow) -> loud (red) through the spectrum
+        {
+            auto key = Rectangle<float> (150.0f, 6.0f).withPosition (screen.getRight() - 196.0f, screen.getBottom() - 14.0f);
+            for (int i = 0; i < 150; ++i)
+            {
+                g.setColour (loudnessColour (Decibels::decibelsToGain (-24.0f + 24.0f * (float) i / 149.0f)));
+                g.fillRect (key.getX() + (float) i, key.getY(), 1.0f, key.getHeight());
+            }
+            g.setFont (font (8.5f, true));
+            g.setColour (colours::textDim);
+            g.drawText ("QUIET", Rectangle<float> (key.getX() - 38.0f, key.getY() - 3.0f, 34.0f, 12.0f), Justification::centredRight);
+            g.drawText ("LOUD", Rectangle<float> (key.getRight() + 4.0f, key.getY() - 3.0f, 34.0f, 12.0f), Justification::centredLeft);
+        }
 
         // gain-reduction trace hanging from the top edge
         const float grTop = screen.getY() + 2.0f, grH = plot.getHeight() * 0.22f;

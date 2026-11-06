@@ -50,6 +50,8 @@ namespace mcui
 
         juce::Colour moodColour (float hueOffset, float brightness, float saturation = 0.78f) const noexcept;
         static float columnBrightness (const mcdsp::VisColumn&) noexcept;
+        /** Waveform colour by level: yellow (quiet, -24 dBFS) round the spectrum to red (loudest, 0 dBFS). */
+        static juce::Colour loudnessColour (float peakLinear) noexcept;
 
         void drawWave (juce::Graphics&);
         void drawSpectrum (juce::Graphics&);

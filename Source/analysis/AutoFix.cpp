@@ -168,6 +168,7 @@ namespace mcdsp
         s.push_back ({ params::width,    r.sideToMidDb < -16.0f ? 120.0f : (r.sideToMidDb > -6.0f ? 90.0f : 105.0f) });
         s.push_back ({ params::saturate, lim (15.0f + std::max (0.0f, airDeficit) * 3.0f, 5.0f, 45.0f) });
         s.push_back ({ params::clipper,  r.crestDb > 13.0f ? 45.0f : 30.0f });
+        s.push_back ({ params::autoGainMix, 100.0f });
         s.push_back ({ params::loudness, r.lufs > -7.0f ? -5.0f : -6.5f });
         s.push_back ({ params::ceiling,  -0.5f });
         s.push_back ({ params::fix,      100.0f });

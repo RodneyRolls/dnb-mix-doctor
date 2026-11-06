@@ -159,6 +159,7 @@ namespace mcdsp
             mixAmt.setCurrentAndTargetValue (p.mix);
             bypassAmt.setCurrentAndTargetValue (p.bypass ? 1.0f : 0.0f);
             activeOs = p.oversample;
+            prevAgMix = std::clamp (p.autoGainMix, 0.0f, 1.0f);
             modeFade = 1.0f;
             const float f = p.fix;
             sTight.v = p.subTight * f; sKick.v = p.kickBass * f; sPunch.v = p.punch * f; sSnap.v = p.snap * f;
@@ -501,7 +502,8 @@ namespace mcdsp
             if (st > refLufs - 1.5f)         quietTime = 0.0f;
             else if ((quietTime += dt) > 30.0f) refLufs -= 0.05f * dt;
 
-            if (st > refLufs - 1.0f)
+            // make-up only adapts at full AUTO GAIN, so turning the knob down never winds it up
+            if (st > refLufs - 1.0f && p.autoGainMix > 0.999f)
             {
                 const float outSt = postLoud.getShortTerm();
                 if (outSt > -45.0f)
@@ -533,9 +535,12 @@ namespace mcdsp
             modeFade = std::min (1.0f, modeFade + fadeStep);
 
         preLoud.process (io, numCh, n);
-        const float gainStart = dbToGain (autoGainDb);
+        // AUTO GAIN knob: how much of the learned gain is applied (0 % = none, the maximiser works on the raw level)
+        const float agMix = std::clamp (p.autoGainMix, 0.0f, 1.0f);
+        const float gainStart = dbToGain (autoGainDb * prevAgMix);
         updateAutoGain (p, n);
-        const float gainEnd = dbToGain (autoGainDb);
+        const float gainEnd = dbToGain (autoGainDb * agMix);
+        prevAgMix = agMix;
         const float ceiling = dbToGain (p.ceilingDb);
         const float clipThreshold = dbToGain (clipThresholdDb (p));
         const float sat = p.saturate * p.fix;

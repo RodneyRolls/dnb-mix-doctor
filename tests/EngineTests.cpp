@@ -168,6 +168,26 @@ int main()
                    "stable level: drop 1 %.2f, drop 2 early %.2f / late %.2f LUFS (target -7)", drop1Late, drop2Early, drop2Late);
         }
 
+        // 4c. AUTO GAIN knob scales the applied gain: 0 % leaves the level alone, 50 % lands in between
+        {
+            float out[3] {};
+            const float mixes[3] = { 0.0f, 0.5f, 1.0f };
+            for (int k = 0; k < 3; ++k)
+            {
+                MixEngine e; e.prepare (sr, 512, 2);
+                auto b = makeMix (sr, 20.0, 0.12f);
+                EngineParams p; p.loudnessLufs = -7.0f; p.autoGainMix = mixes[k];
+                run (e, b, p);
+                LoudnessMeter m; m.prepare (sr);
+                const int start = (int) (sr * 12.0);
+                const float* rd[2] = { b.getReadPointer (0, start), b.getReadPointer (1, start) };
+                m.process (rd, 2, b.getNumSamples() - start);
+                out[k] = m.getIntegrated();
+            }
+            CHECK (out[0] < -14.0f && out[1] > out[0] + 3.0f && out[2] > out[1] + 3.0f && std::abs (out[2] - (-7.0f)) < 1.5f,
+                   "AUTO GAIN 0/50/100 %%: %.2f / %.2f / %.2f LUFS", out[0], out[1], out[2]);
+        }
+
         // 4b. maximiser: loud targets are reached and the true-peak ceiling still holds
         for (float target : { -5.0f, -4.0f })
         {

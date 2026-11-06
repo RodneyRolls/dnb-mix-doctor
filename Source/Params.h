@@ -24,6 +24,7 @@ namespace params
     inline const juce::String width     { "width" };
     inline const juce::String saturate  { "saturate" };
     inline const juce::String clipper   { "clipper" };
+    inline const juce::String autoGainMix { "autoGainMix" };
     inline const juce::String loudness  { "loudness" };
     inline const juce::String ceiling   { "ceiling" };
     inline const juce::String fix       { "fix" };
@@ -34,14 +35,14 @@ namespace params
     inline const juce::String bypass      { "bypass" };
     inline const juce::String oversample  { "oversample" };
 
-    /** The 21 knobs in on-screen order (row 1 then row 2). */
+    /** The 22 knobs in on-screen order (row 1 then row 2). */
     inline const juce::StringArray knobOrder {
-        input, subMono, subTight, kickBass, punch, snap, mud, reese, harsh, air,
-        glue, attack, release, width, saturate, clipper, loudness, ceiling, fix, mix, output };
+        input, subMono, subTight, kickBass, punch, snap, mud, reese, harsh, air, width,
+        glue, attack, release, saturate, clipper, loudness, autoGainMix, ceiling, fix, mix, output };
 
     inline const juce::StringArray knobLabels {
-        "INPUT", "SUB MONO", "SUB TIGHT", "KICK/BASS", "PUNCH", "SNAP", "MUD", "REESE TAME", "HARSH", "AIR",
-        "GLUE", "ATTACK", "RELEASE", "WIDTH", "SATURATE", "CLIPPER", "LOUDNESS", "CEILING", "FIX AMOUNT", "MIX", "OUTPUT" };
+        "INPUT", "SUB MONO", "SUB TIGHT", "KICK/BASS", "PUNCH", "SNAP", "MUD", "REESE TAME", "HARSH", "AIR", "WIDTH",
+        "GLUE", "ATTACK", "RELEASE", "SATURATE", "CLIPPER", "LOUDNESS", "AUTO GAIN", "CEILING", "FIX AMOUNT", "MIX", "OUTPUT" };
 
     inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     {
@@ -82,6 +83,7 @@ namespace params
         addFloat (width,   "Width",   { 0.0f, 200.0f, 0.1f }, 100.0f, "%", pct);
         amount   (saturate, "Saturate", 15.0f);
         amount   (clipper,  "Clipper",   30.0f);
+        amount   (autoGainMix, "Auto Gain", 100.0f);
         addFloat (loudness, "Loudness", { -14.0f, -3.0f, 0.1f }, -7.0f, "LUFS",
                   [] (float v, int) { return String (v, 1) + " LUFS"; });
         addFloat (ceiling,  "Ceiling",  { -3.0f, 0.0f, 0.01f }, -1.0f, "dBTP",

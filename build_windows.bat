@@ -1,6 +1,6 @@
 @echo off
 REM ---------------------------------------------------------------------------
-REM  Builds "The Mix Fixer" (Mod Con DSP) for Windows: 64-bit VST3 + Standalone
+REM  Builds "Dr Rolls Mix Fixer" (Mod Con DSP) for Windows: 64-bit VST3 + Standalone
 REM  Needs: Visual Studio 2022 or 2026 ("Desktop development with C++"),
 REM         CMake 3.22+ and Git on the PATH. First run downloads JUCE 9.0.5.
 REM ---------------------------------------------------------------------------
@@ -8,17 +8,17 @@ setlocal
 cd /d "%~dp0"
 
 cmake -B build -A x64 || goto :fail
-cmake --build build --config Release --target TheMixFixer_VST3 TheMixFixer_Standalone || goto :fail
+cmake --build build --config Release --target DrRollsMixFixer_VST3 DrRollsMixFixer_Standalone || goto :fail
 
-set "ART=build\TheMixFixer_artefacts\Release"
+set "ART=build\DrRollsMixFixer_artefacts\Release"
 if not exist dist mkdir dist
-xcopy /E /I /Y "%ART%\VST3\The Mix Fixer.vst3" "dist\The Mix Fixer.vst3" >nul
-copy /Y "%ART%\Standalone\The Mix Fixer.exe" "dist\The Mix Fixer.exe" >nul
+xcopy /E /I /Y "%ART%\VST3\Dr Rolls Mix Fixer.vst3" "dist\Dr Rolls Mix Fixer.vst3" >nul
+copy /Y "%ART%\Standalone\Dr Rolls Mix Fixer.exe" "dist\Dr Rolls Mix Fixer.exe" >nul
 
 echo.
 echo  Done.
-echo    dist\The Mix Fixer.vst3\  ^<-- copy this folder to  C:\Program Files\Common Files\VST3\
-echo    dist\The Mix Fixer.exe    ^<-- standalone version
+echo    dist\Dr Rolls Mix Fixer.vst3\  ^<-- copy this folder to  C:\Program Files\Common Files\VST3\
+echo    dist\Dr Rolls Mix Fixer.exe    ^<-- standalone version
 echo  Then rescan plugins in your DAW.
 exit /b 0
 

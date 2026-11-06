@@ -9,7 +9,7 @@ namespace
     const Rectangle<int> headerArea { 24, 6, 1252, 46 };
     const Rectangle<int> visArea { 236, 100, 828, 272 };
     const Rectangle<int> sectionArea[2] = { { 24, 378, 1252, 148 }, { 24, 530, 1252, 148 } };
-    constexpr int numKnobs = 21, knobsX = 40, knobsW = 1220, rowY[2] = { 384, 536 }, rowH = 140, knobSize = 104;
+    constexpr int numKnobs = 22, knobsX = 40, knobsW = 1220, rowY[2] = { 384, 536 }, rowH = 140, knobSize = 104;
     constexpr int favouriteIdOffset = 1000;
 
     float easeInOut (float t) { return t < 0.5f ? 4.0f * t * t * t : 1.0f - std::pow (-2.0f * t + 2.0f, 3.0f) * 0.5f; }
@@ -145,17 +145,17 @@ void DnBMixDoctorEditor::layout()
     truePeakDisplay.setBounds (1072, 248, 188, 60);
     grDisplay.setBounds (1072, 312, 188, 60);
 
-    // 21 knobs on an 11-column grid: row 1 (10 knobs) sits half a cell in, row 2 has 11
+    // 22 knobs: two rows of 11
     const int cellW = knobsW / 11, x0 = knobsX + (knobsW - cellW * 11) / 2;
     for (int i = 0; i < numKnobs; ++i)
     {
-        const int row = i < 10 ? 0 : 1, c = row == 0 ? i : i - 10;
-        const int x = x0 + c * cellW + (row == 0 ? cellW / 2 : 0);
+        const int row = i < 11 ? 0 : 1, c = row == 0 ? i : i - 11;
+        const int x = x0 + c * cellW;
         const Rectangle<int> cell (x, rowY[row], cellW, rowH);
         knobCells[(size_t) i] = cell;
         knobs[(size_t) i].setBounds (cell.withTrimmedTop (20).withHeight (knobSize).withSizeKeepingCentre (knobSize, knobSize));
     }
-    const auto relCell = knobCells[12];
+    const auto relCell = knobCells[(size_t) params::knobOrder.indexOf (params::release)];
     releaseAutoButton.setBounds (relCell.getCentreX() - 26, relCell.getBottom() - 21, 52, 19);
 }
 
@@ -190,7 +190,7 @@ void DnBMixDoctorEditor::Panel::renderBackground (float scale)
     // ---- title: the original wordmark face
     g.setFont (mcui::retroFont (27.0f, true).withExtraKerningFactor (0.18f));
     g.setColour (col::text);
-    g.drawText ("THE MIX FIXER", Rectangle<float> (0.0f, 54.0f, (float) W, 32.0f), Justification::centred, false);
+    g.drawText ("DR ROLLS MIX FIXER", Rectangle<float> (0.0f, 54.0f, (float) W, 32.0f), Justification::centred, false);
     mcui::drawCaption (g, "Drum & bass mix repair  +  loudness maximizer", { 0.0f, 84.0f, (float) W, 12.0f },
                        Justification::centred, col::textFaint, 9.0f);
     mcui::drawCaption (g, "Presets", { 92.0f, 60.0f, 80.0f, 32.0f });
@@ -373,7 +373,7 @@ void DnBMixDoctorEditor::showMainMenu()
 {
     PopupMenu menu;
     const bool os = proc.apvts.getParameter (params::oversample)->getValue() > 0.5f;
-    menu.addSectionHeader ("The Mix Fixer  1.0  -  Mod Con DSP");
+    menu.addSectionHeader ("Dr Rolls Mix Fixer  1.0  -  Mod Con DSP");
     menu.addItem (1, "4x oversampling (saturation + limiter)", true, os);
     menu.addItem (2, "Reset meters + re-learn loudness (new song)");
     menu.addItem (3, String ("Switch to ") + (proc.isOnB() ? "A" : "B") + " (compare)");

@@ -65,8 +65,8 @@ private:
     mcui::Readout lufsIntDisplay { "Integrated", "LUFS" }, lufsShortDisplay { "Short-term", "LUFS" },
                   truePeakDisplay { "True peak", "dBTP" }, grDisplay { "Gain reduction", "dB" };
 
-    std::array<mcui::Knob, 21> knobs;
-    std::array<juce::Rectangle<int>, 21> knobCells;
+    std::array<mcui::Knob, 22> knobs;
+    std::array<juce::Rectangle<int>, 22> knobCells;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> sliderAttachments;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> releaseAutoAttachment;
 
