@@ -49,6 +49,15 @@ or by hand:
 
 Copy `build\RollsMixFixer_artefacts\Release\VST3\Rolls Mix Fixer.vst3` to `C:\Program Files\Common Files\VST3\`.
 
+**Windows installer** (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php): `winget install JRSoftware.InnoSetup`):
+
+    build_installer.bat
+
+This builds the plugin, then writes `dist\Rolls Mix Fixer Setup 1.0.0.exe` from `installer\RollsMixFixer.iss`.
+The installer puts the VST3 in `C:\Program Files\Common Files\VST3\`, and can optionally install the standalone app
+with Start-menu and desktop shortcuts. It appears in *Settings > Apps*, where it can be uninstalled cleanly.
+The installer is unsigned, so Windows SmartScreen may warn on first run ("More info > Run anyway").
+
 **macOS** (Xcode 14+; builds a universal arm64 + x86_64 binary):
 
     ./build_macos.sh
