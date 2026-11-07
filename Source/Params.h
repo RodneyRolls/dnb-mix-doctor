@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "dsp/MixEngine.h"
 
 /** Parameter IDs, ranges and the layout used by the AudioProcessorValueTreeState. */
 namespace params
@@ -30,6 +31,19 @@ namespace params
     inline const juce::String fix       { "fix" };
     inline const juce::String mix       { "mix" };
     inline const juce::String output    { "output" };
+    // ---- ADVANCED panel: 16-band graphic EQ
+    inline constexpr int numEqBands = mcdsp::EngineParams::numEqBands;
+    inline constexpr auto eqFreqs = mcdsp::kEqFreqs;
+    inline juce::String eqBand (int i) { return "eq" + juce::String (i + 1); }
+    inline juce::String eqFreqLabel (int i)
+    {
+        const float f = eqFreqs[(size_t) i];
+        return f >= 1000.0f ? juce::String (f / 1000.0f, f < 10000.0f && std::fmod (f, 1000.0f) != 0.0f ? 1 : 0) + "k" : juce::String ((int) f);
+    }
+    inline const juce::String eqMix { "eqMix" };
+    inline const juce::String eqOn  { "eqOn" };
+    inline constexpr float eqRangeDb = 12.0f;
+
     // ---- switches
     inline const juce::String releaseAuto { "releaseAuto" };
     inline const juce::String bypass      { "bypass" };
@@ -91,6 +105,11 @@ namespace params
         amount   (fix,      "Fix Amount", 100.0f);
         amount   (mix,      "Mix",       100.0f);
         addFloat (output,  "Output",  { -24.0f, 24.0f, 0.01f }, 0.0f, "dB", dB);
+
+        for (int i = 0; i < numEqBands; ++i)
+            addFloat (eqBand (i), "EQ " + eqFreqLabel (i), { -eqRangeDb, eqRangeDb, 0.01f }, 0.0f, "dB", dB);
+        amount   (eqMix, "EQ Mix", 100.0f);
+        p.push_back (std::make_unique<AudioParameterBool> (ParameterID { eqOn, version }, "EQ On", true));
 
         p.push_back (std::make_unique<AudioParameterBool> (ParameterID { releaseAuto, version }, "Release Auto", true));
         p.push_back (std::make_unique<AudioParameterBool> (ParameterID { bypass, version }, "Bypass", false));

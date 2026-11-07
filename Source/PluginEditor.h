@@ -5,6 +5,7 @@
 #include "ui/Widgets.h"
 #include "ui/VUMeter.h"
 #include "ui/Visualizer.h"
+#include "ui/EqPanel.h"
 
 /** 1300 x 700 design-size editor. Everything lives in `panel`, which is scaled with an affine transform
     so the window can be resized with a locked aspect ratio while staying pixel-sharp. */
@@ -56,7 +57,8 @@ private:
                      menuButton { "Menu", Icon::menu, false },
                      folderButton { "Preset browser", Icon::folder, false },
                      abButton { "A/B", Icon::none, true },
-                     releaseAutoButton { "Auto release", Icon::none, true };
+                     releaseAutoButton { "Auto release", Icon::none, true },
+                     advancedButton { "Advanced", Icon::none, true };
     juce::ComboBox presetBox;
     mcui::Readout cpuDisplay { {}, "% CPU" };
 
@@ -64,6 +66,9 @@ private:
     mcui::VUMeter vuLeft { "LEFT" }, vuRight { "RIGHT" };
     mcui::Readout lufsIntDisplay { "Integrated", "LUFS" }, lufsShortDisplay { "Short-term", "LUFS" },
                   truePeakDisplay { "True peak", "dBTP" }, grDisplay { "Gain reduction", "dB" };
+
+    mcui::EqPanel eqPanel { proc.apvts, [this] { return proc.currentSampleRate.load(); } };
+    void setAdvancedOpen (bool);
 
     std::array<mcui::Knob, 22> knobs;
     std::array<juce::Rectangle<int>, 22> knobCells;

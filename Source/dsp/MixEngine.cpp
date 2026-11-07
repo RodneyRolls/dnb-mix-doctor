@@ -129,6 +129,9 @@ namespace mcdsp
         for (auto& b : reeseBells) resetBell (b);
         for (auto& b : harshBells) resetBell (b);
 
+        for (auto& b : eqBands) b.reset();
+        eqCurDb.fill (0.0f);
+        eqActive = false;
         samplesSinceKick = 1 << 30;
         lowGainPrev = punchGainPrev = 1.0f;
         bodyDbCur = snapDbCur = 0;
@@ -165,6 +168,8 @@ namespace mcdsp
             sTight.v = p.subTight * f; sKick.v = p.kickBass * f; sPunch.v = p.punch * f; sSnap.v = p.snap * f;
             sMud.v = p.mud * f; sReese.v = p.reese * f; sHarsh.v = p.harsh * f; sAir.v = p.air * f; sGlue.v = p.glue * f;
             sWidth.v = 1.0f + (p.width - 1.0f) * f; sMono.v = f; sMonoHz.v = p.subMonoHz;
+            for (size_t b = 0; b < eqCurDb.size(); ++b)
+                eqCurDb[b] = p.eqOn ? std::clamp (p.eqDb[b], -12.0f, 12.0f) * std::clamp (p.eqMix, 0.0f, 1.0f) : 0.0f;
         }
 
         // ---- latency-aligned dry copy (pre input gain, so MIX 0 % == untouched input)
@@ -435,6 +440,37 @@ namespace mcdsp
                 glueAvgGr += (deepest - glueAvgGr) * (float) (n / sr);   // ~1 s average for AUTO release
                 glueGrDb = std::min (glueGrDb, deepest);
             }
+        }
+
+        // ====== 8. ADVANCED 16-band graphic EQ ====================================================
+        graphicEq (io, numCh, n, p);
+    }
+
+    void MixEngine::graphicEq (float* const* io, int numCh, int n, const EngineParams& p) noexcept
+    {
+        // EQ MIX scales every band's gain (0 % = flat, 100 % = as drawn), so it blends the curve in without the
+        // phase smearing a parallel dry/wet blend of minimum-phase bells would cause. EQ ON fades the curve out.
+        const float depth = p.eqOn ? std::clamp (p.eqMix, 0.0f, 1.0f) : 0.0f;
+        bool any = false;
+        for (size_t b = 0; b < eqCurDb.size(); ++b)
+        {
+            const float target = std::clamp (p.eqDb[b], -12.0f, 12.0f) * depth;
+            eqCurDb[b] += (target - eqCurDb[b]) * paramCoef;
+            if (std::abs (target - eqCurDb[b]) < 0.001f) eqCurDb[b] = target;
+            any = any || std::abs (eqCurDb[b]) > 0.001f;
+        }
+        if (! any)
+        {
+            if (eqActive) { for (auto& f : eqBands) f.reset(); eqActive = false; }
+            return;
+        }
+        eqActive = true;
+        for (size_t b = 0; b < eqBands.size(); ++b)
+        {
+            auto& f = eqBands[b];
+            f.setup (Svf::Mode::bell, sr, (double) kEqFreqs[b], 1.8, eqCurDb[b]);
+            for (int ch = 0; ch < numCh; ++ch)
+                for (int i = 0; i < n; ++i) io[ch][i] = f.process (io[ch][i], ch);
         }
     }
 

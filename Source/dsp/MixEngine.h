@@ -6,6 +6,11 @@
 
 namespace mcdsp
 {
+    /** Centre frequencies of the ADVANCED panel's 16-band graphic EQ (roughly 2/3-octave spacing). */
+    inline constexpr std::array<float, 16> kEqFreqs {
+        25.0f, 40.0f, 63.0f, 100.0f, 160.0f, 250.0f, 400.0f, 630.0f,
+        1000.0f, 1600.0f, 2500.0f, 4000.0f, 6300.0f, 10000.0f, 14000.0f, 18000.0f };
+
     /** Plain parameter snapshot handed to the engine once per block. Amounts are 0..1. */
     struct EngineParams
     {
@@ -13,6 +18,11 @@ namespace mcdsp
               mud = 0.25f, reese = 0.2f, harsh = 0.25f, air = 0.2f, glue = 0.25f, attackMs = 10, releaseMs = 150,
               width = 1.0f, saturate = 0.15f, clipper = 0.3f, autoGainMix = 1.0f, loudnessLufs = -7, ceilingDb = -1, fix = 1.0f, mix = 1.0f, outputDb = 0;
         bool releaseAuto = true, bypass = false, oversample = true;
+        // ADVANCED: 16-band graphic EQ (dB per band), EQ MIX scales every band (0..1), EQ ON
+        static constexpr int numEqBands = 16;
+        std::array<float, numEqBands> eqDb {};
+        float eqMix = 1.0f;
+        bool eqOn = true;
     };
 
     /** The complete DnB Mix Doctor signal chain:
@@ -50,6 +60,7 @@ namespace mcdsp
     private:
         static constexpr int sub = 32;   // control-rate sub-block
 
+        void graphicEq (float* const* io, int numCh, int n, const EngineParams& p) noexcept;
         void processSubBlock (float* const* io, int numCh, int n, const EngineParams& p) noexcept;
         void outputStage (float* const* io, int numCh, int n, const EngineParams& p) noexcept;
         void saturate (float* const* d, int numCh, int n, float amount) noexcept;
@@ -110,6 +121,11 @@ namespace mcdsp
 
         // ---- GLUE
         float glueEnvDb = 0, glueAvgGr = 0;
+
+        // ---- ADVANCED 16-band graphic EQ
+        std::array<Svf, EngineParams::numEqBands> eqBands;
+        std::array<float, EngineParams::numEqBands> eqCurDb {};
+        bool eqActive = false;
 
         // ---- output stage
         std::unique_ptr<juce::dsp::Oversampling<float>> oversampler;

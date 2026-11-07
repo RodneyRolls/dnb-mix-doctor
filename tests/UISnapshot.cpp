@@ -219,6 +219,41 @@ int main (int argc, char** argv)
     }
     shoot (mcui::Visualizer::View::wave, "ui_wave_bright.png");
 
+    // ADVANCED panel open with a typical "smile" curve drawn on the 16-band EQ
+    {
+        const float curve[16] = { 3.0f, 4.5f, 3.5f, 1.0f, -1.5f, -3.0f, -4.0f, -2.5f, -1.0f, 0.0f, -2.0f, 1.0f, 2.5f, 4.0f, 5.0f, 3.0f };
+        for (int i = 0; i < 16; ++i)
+            if (auto* prm = proc.apvts.getParameter (params::eqBand (i))) prm->setValueNotifyingHost (prm->convertTo0to1 (curve[i]));
+        // press the ADVANCED button in the header
+        std::function<Button* (Component&)> findButton = [&] (Component& c) -> Button*
+        {
+            for (auto* child : c.getChildren())
+            {
+                if (auto* b = dynamic_cast<Button*> (child); b != nullptr && b->getName() == "Advanced") return b;
+                if (auto* b = findButton (*child)) return b;
+            }
+            return nullptr;
+        };
+        if (auto* adv = findButton (*editor); adv != nullptr && adv->onClick) adv->onClick();
+        shoot (mcui::Visualizer::View::wave, "ui_advanced.png");
+    }
+
+    // close and reopen the editor, as a host does (the ADVANCED panel stays open)
+    proc.editorBeingDeleted (editor.get());
+    editor = nullptr;
+    editor.reset (proc.createEditorIfNeeded());
+    if (editor == nullptr) { std::puts ("reopen FAILED"); return 1; }
+    for (int i = 0; i < 40; ++i) { fillMix (buf, sr, pos); proc.processBlock (buf, midi); }
+    {
+        auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+        auto f = outDir.getChildFile ("ui_reopened.png");
+        f.deleteFile();
+        FileOutputStream os (f);
+        PNGImageFormat().writeImageToStream (img, os);
+        std::printf ("reopened editor (%d x %d, advanced %s): wrote %s\n", editor->getWidth(), editor->getHeight(),
+                     proc.advancedOpen ? "open" : "closed", f.getFullPathName().toRawUTF8());
+    }
+    proc.editorBeingDeleted (editor.get());
     editor = nullptr;
     return 0;
 }

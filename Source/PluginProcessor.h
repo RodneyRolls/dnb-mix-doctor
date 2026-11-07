@@ -43,7 +43,7 @@ public:
     PresetManager presets { apvts };
 
     // ---- lock-free audio -> UI data
-    mcdsp::SpscFifo<mcdsp::VisColumn, 4096> columnFifo;
+    mcdsp::SpscFifo<mcdsp::VisColumn, 8192> columnFifo;
     mcdsp::SpscFifo<float, 32768> spectrumInFifo, spectrumOutFifo;
     mcdsp::SpscFifo<mcdsp::StereoFrame, 16384> stereoFifo;
     mcdsp::AutoFixAnalyser autoFix;
@@ -64,6 +64,7 @@ public:
     bool isOnB() const noexcept { return abOnB; }
 
     int editorWidth = 1300, editorHeight = 700;
+    bool advancedOpen = false;   // ADVANCED (EQ) panel showing (kept while the editor is closed and reopened)
 
 private:
     void runEngine (juce::AudioBuffer<float>&, bool forceBypass);
@@ -86,7 +87,9 @@ private:
         float get() const noexcept { return v->load (std::memory_order_relaxed); }
     };
     P pInput, pSubMono, pSubTight, pKickBass, pPunch, pSnap, pMud, pReese, pHarsh, pAir, pGlue, pAttack, pRelease,
-      pWidth, pSaturate, pClipper, pAutoGainMix, pLoudness, pCeiling, pFix, pMix, pOutput, pReleaseAuto, pBypass, pOversample;
+      pWidth, pSaturate, pClipper, pAutoGainMix, pLoudness, pCeiling, pFix, pMix, pOutput, pReleaseAuto, pBypass, pOversample,
+      pEqMix, pEqOn;
+    std::array<P, params::numEqBands> pEq;
 
     juce::ValueTree abOther;
     bool abOnB = false;

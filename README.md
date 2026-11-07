@@ -1,23 +1,28 @@
-# Dr Rolls Mix Fixer — Mod Con DSP
+# Rolls Mix Fixer — Mod Con DSP
 
 A one-stop mix repair processor for drum & bass (160–178 BPM). Put it on the master or a drum/bass bus:
 it fixes phasey sub, kick/bass clashes, weak transients, mud, reese resonances, harsh highs, dull top end,
 uncontrolled width and low loudness, and finishes with a clipper + true-peak limiter loudness maximizer.
-Dr Rolls Mix Fixer is the successor to DnB Mix Doctor V1/V2 and The Mix Fixer.
+Rolls Mix Fixer is the successor to DnB Mix Doctor V1/V2, The Mix Fixer and Dr Rolls Mix Fixer.
 
 VST3 (Windows + macOS), AU (macOS) and Standalone. JUCE 9.0.5, C++17, CMake.
 
-Plugin codes: manufacturer **Mod Con DSP** / `MCDS`, plugin `DrMF`, bundle `com.modcondsp.drrollsmixfixer`
-(its own identity, so it installs next to the earlier versions). The standalone `Dr Rolls Mix Fixer.exe` uses a
+Plugin codes: manufacturer **Mod Con DSP** / `MCDS`, plugin `RlMF`, bundle `com.modcondsp.rollsmixfixer`
+(its own identity, so it installs next to the earlier versions). The standalone `Rolls Mix Fixer.exe` uses a
 VU-meter app icon (`Resources/icon.png`, drawn by `DnBMixDoctorSnapshot --icon <png>`).
 
 ## Highlights
 - **Modern UI** with dark graphite cards, a cyan → violet accent and values shown inside the knobs. The wordmark
   and the two analogue VU meters use the original V1 design. The VU faces are lit white and glow red as the
   level climbs past 0 VU (0 VU = the LOUDNESS target).
-- **Loudness-coloured waveform:** each slice of the waveform is coloured by its level, round the colour wheel from
-  yellow (quiet, -24 dB) through green, cyan, blue and magenta to red (loudest). A key under the display shows the
-  scale. The spectrum and goniometer still follow the track's overall colour "mood".
+- **ADVANCED panel (16-band EQ):** the ADVANCED button in the header swaps the knob section for a 16-band graphic
+  EQ (25 Hz to 18 kHz, ±12 dB per band) with a live response curve. EQ MIX scales the whole curve (0 % = flat,
+  100 % = as drawn), EQ ON switches it in and out, FLAT resets every band. The EQ sits after GLUE and before the
+  clipper/limiter, so auto-gain keeps the loudness on target. Loading a preset starts from a flat EQ.
+- **Accurate, loudness-coloured waveform:** 512 slices per second, drawn per screen pixel like a DAW: the true
+  min/max peak of the audio under each pixel (lighter) with its RMS level inside (solid). Colour follows the level,
+  round the colour wheel from yellow (quiet) through green, cyan, blue and magenta to red (loudest). The spectrum
+  and goniometer still follow the track's overall colour "mood".
 - **Separate CLIPPER and LOUDNESS knobs:**
   - CLIPPER sets how hard a 4× oversampled soft clipper shaves peaks before the limiter (0 % = off).
   - LOUDNESS sets how loud the drops end up (−14…−3 LUFS).
@@ -40,9 +45,9 @@ You need CMake 3.22+ and Git. The first configure downloads JUCE 9.0.5 automatic
 or by hand:
 
     cmake -B build -G "Visual Studio 17 2022" -A x64
-    cmake --build build --config Release --target DrRollsMixFixer_VST3 DrRollsMixFixer_Standalone
+    cmake --build build --config Release --target RollsMixFixer_VST3 RollsMixFixer_Standalone
 
-Copy `build\DrRollsMixFixer_artefacts\Release\VST3\Dr Rolls Mix Fixer.vst3` to `C:\Program Files\Common Files\VST3\`.
+Copy `build\RollsMixFixer_artefacts\Release\VST3\Rolls Mix Fixer.vst3` to `C:\Program Files\Common Files\VST3\`.
 
 **macOS** (Xcode 14+; builds a universal arm64 + x86_64 binary):
 
@@ -51,7 +56,7 @@ Copy `build\DrRollsMixFixer_artefacts\Release\VST3\Dr Rolls Mix Fixer.vst3` to `
 or by hand:
 
     cmake -B build -G Xcode
-    cmake --build build --config Release --target DrRollsMixFixer_VST3 DrRollsMixFixer_AU DrRollsMixFixer_Standalone
+    cmake --build build --config Release --target RollsMixFixer_VST3 RollsMixFixer_AU RollsMixFixer_Standalone
 
 Copy the `.vst3` to `~/Library/Audio/Plug-Ins/VST3/` and the `.component` to `~/Library/Audio/Plug-Ins/Components/`.
 For distribution, sign and notarise the bundles (`codesign` + `notarytool`).
@@ -69,12 +74,12 @@ true-peak ceiling on a hot mix, loudness landing on target (including -5 and -4 
     cmake --build build --config Release --target DnBMixDoctorSnapshot
     build/DnBMixDoctorSnapshot_artefacts/Release/DnBMixDoctorSnapshot <out-folder> [scale]
 
-Renders the editor (WAVE / SPECTRUM / STEREO) to PNG with synthetic DnB audio flowing, plus a WAVE shot after a bright mix to show the colour change.
+Renders the editor (WAVE / SPECTRUM / STEREO) to PNG with synthetic DnB audio flowing, plus a WAVE shot after a bright mix, the ADVANCED panel open, and the editor after a close + reopen.
 
 ## Signal flow
 
     INPUT → [LR4 @120 Hz: SUB TIGHT + KICK/BASS on the low band] → [LR4 @SUB MONO: mono lows, WIDTH above]
-          → PUNCH → SNAP → MUD / REESE TAME / HARSH dynamic EQ → AIR → GLUE
+          → PUNCH → SNAP → MUD / REESE TAME / HARSH dynamic EQ → AIR → GLUE → ADVANCED 16-band EQ
           → (4x oversampled when enabled: SATURATE → loudness auto-gain → soft clipper → limiter → catch limiter)
           → latency-aligned MIX → OUTPUT → click-free bypass
 
@@ -98,6 +103,7 @@ Renders the editor (WAVE / SPECTRUM / STEREO) to PNG with synthetic DnB audio fl
 | AUTO GAIN | How much of the learned auto-gain is applied, 0–100 %. At 100 % the drops land on LOUDNESS; lower settings scale the gain down in dB (50 % = half the dB). The make-up for limiter loss only adapts at 100 % |
 | CEILING | True-peak ceiling −3…0 dBTP |
 | FIX AMOUNT | Macro that scales every corrective module (everything from SUB MONO to SATURATE) 0–100 % |
+| EQ (ADVANCED) | 16 bells at 25, 40, 63, 100, 160, 250, 400, 630 Hz, 1, 1.6, 2.5, 4, 6.3, 10, 14, 18 kHz (Q 1.8, ±12 dB). EQ MIX multiplies every band gain (no dry/wet phase smearing); EQ ON fades the curve out |
 | MIX | Dry/wet with the dry path delayed to match the latency |
 | OUTPUT | Output gain, ±24 dB |
 
@@ -131,8 +137,8 @@ it's listening to cancel. The reference curve is an engineering estimate, not me
 ### Presets
 Factory: Default, Liquid Polish, Neuro Smash, Jump Up Bounce, Rollers Sub Fix, Jungle Breaks, Club Loud,
 Gentle Master Assist. User presets save as `.mcdpreset` files in
-`%APPDATA%\Mod Con DSP\Dr Rolls Mix Fixer\Presets` (Windows) or
-`~/Library/Application Support/Mod Con DSP/Dr Rolls Mix Fixer/Presets` (macOS). The star marks favourites; A/B swaps
+`%APPDATA%\Mod Con DSP\Rolls Mix Fixer\Presets` (Windows) or
+`~/Library/Application Support/Mod Con DSP/Rolls Mix Fixer/Presets` (macOS). The star marks favourites; A/B swaps
 two complete settings without touching the power switch or oversampling mode.
 
 ## Source layout

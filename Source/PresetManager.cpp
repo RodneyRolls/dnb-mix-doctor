@@ -40,7 +40,7 @@ PresetManager::PresetManager (juce::AudioProcessorValueTreeState& s) : apvts (s)
 juce::File PresetManager::getUserFolder()
 {
     auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("Mod Con DSP").getChildFile ("Dr Rolls Mix Fixer").getChildFile ("Presets");
+                   .getChildFile ("Mod Con DSP").getChildFile ("Rolls Mix Fixer").getChildFile ("Presets");
     dir.createDirectory();
     return dir;
 }
@@ -86,6 +86,11 @@ bool PresetManager::load (int index)
     if (index < 0 || index >= (int) entries.size()) return false;
     const auto& e = entries[(size_t) index];
 
+    // every preset starts from a flat ADVANCED EQ (factory presets and older user presets don't store one)
+    for (int i = 0; i < params::numEqBands; ++i) setParam (apvts, params::eqBand (i), 0.0f);
+    setParam (apvts, params::eqMix, 100.0f);
+    setParam (apvts, params::eqOn, 1.0f);
+
     if (e.factory)
         applyFactory (e.name);
     else
@@ -118,7 +123,7 @@ bool PresetManager::saveUser (const juce::String& rawName)
     const auto name = juce::File::createLegalFileName (rawName.trim());
     if (name.isEmpty() || getFactoryNames().contains (name)) return false;
 
-    juce::XmlElement xml ("DrRollsMixFixerPreset");
+    juce::XmlElement xml ("RollsMixFixerPreset");
     xml.setAttribute ("version", params::version);
     for (auto* p : apvts.processor.getParameters())
         if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))

@@ -6,7 +6,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STR
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 
-project(DrRollsMixFixer VERSION 1.0.0 LANGUAGES C CXX)
+project(RollsMixFixer VERSION 1.0.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -36,17 +36,17 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png")
     set(MCDSP_ICON_ARGS ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png" ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png")
 endif()
 
-juce_add_plugin(DrRollsMixFixer
+juce_add_plugin(RollsMixFixer
     COMPANY_NAME               "Mod Con DSP"
     COMPANY_WEBSITE            ""
-    PRODUCT_NAME               "Dr Rolls Mix Fixer"
+    PRODUCT_NAME               "Rolls Mix Fixer"
     VERSION                    1.0.0
     PLUGIN_MANUFACTURER_CODE   MCDS
-    PLUGIN_CODE                DrMF
+    PLUGIN_CODE                RlMF
     FORMATS                    ${MCDSP_FORMATS}
     VST3_CATEGORIES            Fx Mastering Dynamics
     AU_MAIN_TYPE               kAudioUnitType_Effect
-    BUNDLE_ID                  com.modcondsp.drrollsmixfixer
+    BUNDLE_ID                  com.modcondsp.rollsmixfixer
     IS_SYNTH                   FALSE
     NEEDS_MIDI_INPUT           FALSE
     NEEDS_MIDI_OUTPUT          FALSE
@@ -55,7 +55,7 @@ juce_add_plugin(DrRollsMixFixer
     COPY_PLUGIN_AFTER_BUILD    FALSE
     ${MCDSP_ICON_ARGS})
 
-target_sources(DrRollsMixFixer PRIVATE
+target_sources(RollsMixFixer PRIVATE
     Source/Params.h
     Source/PluginProcessor.cpp      Source/PluginProcessor.h
     Source/PluginEditor.cpp         Source/PluginEditor.h
@@ -69,17 +69,18 @@ target_sources(DrRollsMixFixer PRIVATE
     Source/ui/Theme.cpp             Source/ui/Theme.h
     Source/ui/Widgets.h
     Source/ui/VUMeter.h
+    Source/ui/EqPanel.h
     Source/ui/Visualizer.cpp        Source/ui/Visualizer.h)
 
-target_include_directories(DrRollsMixFixer PRIVATE Source)
+target_include_directories(RollsMixFixer PRIVATE Source)
 
-target_compile_definitions(DrRollsMixFixer PUBLIC
+target_compile_definitions(RollsMixFixer PUBLIC
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0)
 
-target_link_libraries(DrRollsMixFixer
+target_link_libraries(RollsMixFixer
     PRIVATE
         juce::juce_audio_utils
         juce::juce_dsp
@@ -99,13 +100,13 @@ set_target_properties(DnBMixDoctorTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
 # ---- Renders the editor to PNG with audio flowing (UI review without a DAW)
 juce_add_console_app(DnBMixDoctorSnapshot PRODUCT_NAME "DnBMixDoctorSnapshot")
-get_target_property(MCDSP_PLUGIN_SOURCES DrRollsMixFixer SOURCES)
+get_target_property(MCDSP_PLUGIN_SOURCES RollsMixFixer SOURCES)
 list(FILTER MCDSP_PLUGIN_SOURCES INCLUDE REGEX "\\.cpp$")
 list(FILTER MCDSP_PLUGIN_SOURCES INCLUDE REGEX "^Source/")
 target_sources(DnBMixDoctorSnapshot PRIVATE tests/UISnapshot.cpp ${MCDSP_PLUGIN_SOURCES})
 target_include_directories(DnBMixDoctorSnapshot PRIVATE Source)
 target_compile_definitions(DnBMixDoctorSnapshot PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
-                           JucePlugin_Name="Dr Rolls Mix Fixer")
+                           JucePlugin_Name="Rolls Mix Fixer")
 target_link_libraries(DnBMixDoctorSnapshot PRIVATE juce::juce_audio_utils juce::juce_dsp
                       PUBLIC juce::juce_recommended_config_flags)
 set_target_properties(DnBMixDoctorSnapshot PROPERTIES EXCLUDE_FROM_ALL TRUE)

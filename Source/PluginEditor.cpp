@@ -21,11 +21,14 @@ namespace
 DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
     : AudioProcessorEditor (p), proc (p)
 {
+    // read the saved window width first: setResizable() below calls resized() at the default size,
+    // which would overwrite it and make the window reopen at its minimum size
+    const int savedWidth = jlimit (designW * 6 / 10, designW * 2, proc.editorWidth);
     setLookAndFeel (&lnf);
     addAndMakeVisible (panel);
 
     for (auto* b : { &powerButton, &autoFixButton, &prevButton, &nextButton, &starButton, &menuButton,
-                     &folderButton, &abButton, &releaseAutoButton })
+                     &folderButton, &abButton, &releaseAutoButton, &advancedButton })
         panel.addAndMakeVisible (b);
     for (auto* c : std::initializer_list<Component*> { &presetBox, &cpuDisplay, &visualizer, &vuLeft, &vuRight,
                                                         &lufsIntDisplay, &lufsShortDisplay, &truePeakDisplay, &grDisplay })
@@ -34,6 +37,7 @@ DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
     abButton.setText ("A");
     releaseAutoButton.setText ("AUTO");
     releaseAutoButton.setClickingTogglesState (true);
+    advancedButton.setText ("ADVANCED");
 
     // ---- knobs
     for (int i = 0; i < numKnobs; ++i)
@@ -48,6 +52,11 @@ DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
         k.setBipolar (id == params::input || id == params::output || id == params::width);
     }
     releaseAutoAttachment = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, params::releaseAuto, releaseAutoButton);
+
+    // ---- ADVANCED: the 16-band EQ panel slides over the knob section
+    panel.addChildComponent (eqPanel);
+    advancedButton.onClick = [this] { setAdvancedOpen (! proc.advancedOpen); };
+    eqPanel.onClose = [this] { setAdvancedOpen (false); };
 
     // ---- top bar
     powerButton.onClick = [this]
@@ -91,14 +100,14 @@ DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
 
     layout();
     refreshPresetBox();
+    setAdvancedOpen (proc.advancedOpen);
     vuLeft.referenceDbfs = vuRight.referenceDbfs = proc.apvts.getRawParameterValue (params::loudness)->load();
 
     // resizing: aspect ratio locked, whole panel scaled
     setResizable (true, true);
     setResizeLimits (designW * 6 / 10, designH * 6 / 10, designW * 2, designH * 2);
     getConstrainer()->setFixedAspectRatio ((double) designW / designH);
-    setSize (jlimit (designW * 6 / 10, designW * 2, proc.editorWidth),
-             roundToInt (jlimit (designW * 6 / 10, designW * 2, proc.editorWidth) * (double) designH / designW));
+    setSize (savedWidth, roundToInt (savedWidth * (double) designH / designW));
 
     proc.editorOpen = true;
     startTimerHz (60);
@@ -131,6 +140,7 @@ void DnBMixDoctorEditor::layout()
     starButton.setBounds (856, 11, 36, 36);
     cpuDisplay.setBounds (1100, 13, 104, 32);
     menuButton.setBounds (1218, 11, 48, 36);
+    advancedButton.setBounds (914, 11, 150, 36);
 
     // title row
     folderButton.setBounds (40, 60, 44, 32);
@@ -157,6 +167,17 @@ void DnBMixDoctorEditor::layout()
     }
     const auto relCell = knobCells[(size_t) params::knobOrder.indexOf (params::release)];
     releaseAutoButton.setBounds (relCell.getCentreX() - 26, relCell.getBottom() - 21, 52, 19);
+    eqPanel.setBounds (sectionArea[0].getUnion (sectionArea[1]));
+}
+
+void DnBMixDoctorEditor::setAdvancedOpen (bool open)
+{
+    proc.advancedOpen = open;
+    eqPanel.setVisible (open);
+    if (open) eqPanel.toFront (false);
+    for (auto& k : knobs) k.setVisible (! open);
+    releaseAutoButton.setVisible (! open);
+    advancedButton.setToggleState (open, dontSendNotification);
 }
 
 //==============================================================================
@@ -190,7 +211,7 @@ void DnBMixDoctorEditor::Panel::renderBackground (float scale)
     // ---- title: the original wordmark face
     g.setFont (mcui::retroFont (27.0f, true).withExtraKerningFactor (0.18f));
     g.setColour (col::text);
-    g.drawText ("DR ROLLS MIX FIXER", Rectangle<float> (0.0f, 54.0f, (float) W, 32.0f), Justification::centred, false);
+    g.drawText ("ROLLS MIX FIXER", Rectangle<float> (0.0f, 54.0f, (float) W, 32.0f), Justification::centred, false);
     mcui::drawCaption (g, "Drum & bass mix repair  +  loudness maximizer", { 0.0f, 84.0f, (float) W, 12.0f },
                        Justification::centred, col::textFaint, 9.0f);
     mcui::drawCaption (g, "Presets", { 92.0f, 60.0f, 80.0f, 32.0f });
@@ -373,7 +394,7 @@ void DnBMixDoctorEditor::showMainMenu()
 {
     PopupMenu menu;
     const bool os = proc.apvts.getParameter (params::oversample)->getValue() > 0.5f;
-    menu.addSectionHeader ("Dr Rolls Mix Fixer  1.0  -  Mod Con DSP");
+    menu.addSectionHeader ("Rolls Mix Fixer  1.0  -  Mod Con DSP");
     menu.addItem (1, "4x oversampling (saturation + limiter)", true, os);
     menu.addItem (2, "Reset meters + re-learn loudness (new song)");
     menu.addItem (3, String ("Switch to ") + (proc.isOnB() ? "A" : "B") + " (compare)");

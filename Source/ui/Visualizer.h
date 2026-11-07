@@ -60,7 +60,7 @@ namespace mcui
 
         DnBMixDoctorProcessor& proc;
 
-        static constexpr int numCols = 1024;
+        static constexpr int numCols = 2048;   // 4 s at 512 columns per second
         std::array<mcdsp::VisColumn, numCols> cols {};
         std::array<mcdsp::VisColumn, numCols> popBuf {};
         std::array<float, numCols> colTone {};   // per-column brightness 0..1 (sub -> highs)

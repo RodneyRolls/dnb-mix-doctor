@@ -218,6 +218,33 @@ int main()
             CHECK (after < before - 15.0, "low side energy %.1f dB -> %.1f dB", before, after);
         }
 
+        // 5b. ADVANCED 16-band EQ: a band moves a sine at its frequency by its gain, scaled by EQ MIX; EQ ON off = flat
+        {
+            auto sineDb = [&] (float freq, float bandDb, int band, float eqMix, bool eqOn)
+            {
+                MixEngine e; e.prepare (sr, 512, 2);
+                const int n = (int) (sr * 1.0);
+                juce::AudioBuffer<float> b (2, n);
+                for (int i = 0; i < n; ++i)
+                {
+                    const float v = 0.05f * (float) std::sin (2 * kPi * freq * i / sr);
+                    b.setSample (0, i, v); b.setSample (1, i, v);
+                }
+                auto p = neutral(); p.autoGainMix = 0; p.clipper = 0; p.oversample = false;
+                p.eqDb[(size_t) band] = bandDb; p.eqMix = eqMix; p.eqOn = eqOn;
+                run (e, b, p);
+                double s = 0; for (int i = n / 2; i < n; ++i) s += (double) b.getSample (0, i) * b.getSample (0, i);
+                return 10.0 * std::log10 (s / (n - n / 2)) - 10.0 * std::log10 (0.05 * 0.05 * 0.5);
+            };
+            const double full = sineDb (1000.0f, 6.0f, 8, 1.0f, true), half = sineDb (1000.0f, 6.0f, 8, 0.5f, true);
+            const double cut = sineDb (100.0f, -9.0f, 3, 1.0f, true), off = sineDb (1000.0f, 6.0f, 8, 1.0f, false);
+            const double top = sineDb (10000.0f, 6.0f, 13, 1.0f, true);
+            CHECK (std::abs (full - 6.0) < 0.6 && std::abs (half - 3.0) < 0.5 && std::abs (cut + 9.0) < 0.7
+                   && std::abs (off) < 0.2 && std::abs (top - 6.0) < 0.8,
+                   "EQ 1k +6 dB -> %+.2f, at EQ MIX 50 %% %+.2f, 100 Hz -9 dB -> %+.2f, 10k +6 -> %+.2f, EQ off %+.2f",
+                   full, half, cut, top, off);
+        }
+
         // 6. mono layout runs and stays finite
         {
             MixEngine e; e.prepare (sr, 512, 1);
@@ -235,6 +262,7 @@ int main()
         auto b = makeMix (48000.0, 60.0, 0.4f);
         EngineParams p; p.oversample = true;
         p.subTight = p.kickBass = p.punch = p.snap = p.mud = p.reese = p.harsh = p.air = p.glue = p.saturate = 0.5f;
+        for (size_t k = 0; k < p.eqDb.size(); ++k) p.eqDb[k] = (k % 2 == 0) ? 3.0f : -3.0f;   // all 16 EQ bands active
         const auto t0 = juce::Time::getMillisecondCounterHiRes();
         run (e, b, p, 256);
         const double ms = juce::Time::getMillisecondCounterHiRes() - t0;

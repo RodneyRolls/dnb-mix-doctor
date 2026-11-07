@@ -1,4 +1,4 @@
-name: Build Dr Rolls Mix Fixer
+name: Build Rolls Mix Fixer
 
 on:
   push:
@@ -14,11 +14,11 @@ jobs:
           - os: windows-latest
             name: Windows
             configure: cmake -B build -A x64
-            targets: DrRollsMixFixer_VST3 DrRollsMixFixer_Standalone
+            targets: RollsMixFixer_VST3 RollsMixFixer_Standalone
           - os: macos-latest
             name: macOS
             configure: cmake -B build -G Xcode
-            targets: DrRollsMixFixer_VST3 DrRollsMixFixer_AU DrRollsMixFixer_Standalone
+            targets: RollsMixFixer_VST3 RollsMixFixer_AU RollsMixFixer_Standalone
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +41,7 @@ jobs:
         with:
           name: Dr-Rolls-Mix-Fixer-${{ matrix.name }}
           path: |
-            build/DrRollsMixFixer_artefacts/Release/VST3
-            build/DrRollsMixFixer_artefacts/Release/AU
-            build/DrRollsMixFixer_artefacts/Release/Standalone
+            build/RollsMixFixer_artefacts/Release/VST3
+            build/RollsMixFixer_artefacts/Release/AU
+            build/RollsMixFixer_artefacts/Release/Standalone
           if-no-files-found: error

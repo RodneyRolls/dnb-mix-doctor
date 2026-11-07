@@ -288,31 +288,34 @@ namespace mcui
         g.drawText ("-6", Rectangle<float> (plot.getRight() - 24, yFor (0.5f) - 11, 22, 10), Justification::centredRight);
         g.drawText ("-12", Rectangle<float> (plot.getRight() - 24, yFor (0.25f) - 11, 22, 10), Justification::centredRight);
 
-        // processed signal: each column tinted around the mood hue by its own spectral balance, lit by its level
-        Path topEdge, bottomEdge;
-        for (int c = 0; c < numCols; ++c)
+        // processed signal, drawn per physical pixel like a DAW waveform: every pixel shows the true min/max of
+        // all the audio it covers (outer, lighter) and its RMS (inner, solid), coloured by that RMS loudness
+        const float pxScale = jmax (1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
+        const int numPx = jmax (1, roundToInt (plot.getWidth() * pxScale));
+        const float pxW = plot.getWidth() / (float) numPx;
+        for (int px = 0; px < numPx; ++px)
         {
-            const int idx = (colWrite + c) % numCols;
-            const auto& col = cols[(size_t) idx];
-            const float y1 = yFor (col.outMax), y2 = yFor (col.outMin);
-            const float x = plot.getX() + c * colW;
-            // colour by the slice's RMS (+6 dB so a full-scale sine reads ~0 dB): shows loud vs quiet parts even on
-            // a heavily limited master, where nearly every peak sits at the ceiling
-            const float level = 2.0f * jmax (col.rmsL, col.rmsR);
-            g.setColour (loudnessColour (level).withAlpha (0.92f));
-            g.fillRect (x, y1, colW + 0.5f, jmax (1.0f, y2 - y1));
-            if (c == 0) { topEdge.startNewSubPath (x, y1); bottomEdge.startNewSubPath (x, y2); }
-            else        { topEdge.lineTo (x, y1);          bottomEdge.lineTo (x, y2); }
+            const int c0 = (int) ((int64) px * numCols / numPx);
+            const int c1 = jmax (c0 + 1, (int) ((int64) (px + 1) * numCols / numPx));
+            float hi = -1.0e9f, lo = 1.0e9f;
+            double pow = 0.0;
+            for (int c = c0; c < c1; ++c)
+            {
+                const auto& col = cols[(size_t) ((colWrite + c) % numCols)];
+                hi = jmax (hi, col.outMax); lo = jmin (lo, col.outMin);
+                pow += 0.5 * ((double) col.rmsL * col.rmsL + (double) col.rmsR * col.rmsR);
+            }
+            const float rms = (float) std::sqrt (pow / (c1 - c0));
+            const float x = plot.getX() + (float) px * pxW;
+            // colour by the RMS (+6 dB so a full-scale sine reads ~0 dB): loud vs quiet stays visible on a limited master
+            const auto colour = loudnessColour (2.0f * rms);
+            const float y1 = yFor (hi), y2 = yFor (lo);
+            g.setColour (colour.withAlpha (0.55f));
+            g.fillRect (x, y1, pxW, jmax (1.0f / pxScale, y2 - y1));
+            const float r = jmin (rms, jmax (std::abs (hi), std::abs (lo)));
+            g.setColour (colour);
+            g.fillRect (x, yFor (r), pxW, jmax (1.0f / pxScale, yFor (-r) - yFor (r)));
         }
-        // bright rim along the envelope + soft bloom through the centre
-        const auto rim = Colours::white.withAlpha (0.45f);
-        g.setColour (rim);
-        g.strokePath (topEdge, PathStrokeType (1.0f));
-        g.strokePath (bottomEdge, PathStrokeType (1.0f));
-        ColourGradient bloom (Colours::white.withAlpha (0.0f), 0, midY - k, Colours::white.withAlpha (0.0f), 0, midY + k, false);
-        bloom.addColour (0.5, Colours::white.withAlpha (0.10f));
-        g.setGradientFill (bloom);
-        g.fillRect (plot.withTop (midY - k).withBottom (midY + k));
 
         // unprocessed input: thin ghost outline
         Path ghost;
@@ -330,23 +333,6 @@ namespace mcui
         g.setColour (Colours::white.withAlpha (0.28f));
         g.strokePath (ghost, PathStrokeType (0.8f));
 
-        // peak-hold markers per quarter second
-        const int win = perSecond / 4;
-        g.setColour (Colours::white.withAlpha (0.38f));
-        for (int start = 0; start < numCols; start += win)
-        {
-            float pk = 0;
-            for (int c = start; c < start + win && c < numCols; ++c)
-            {
-                const auto& col = cols[(size_t) ((colWrite + c) % numCols)];
-                pk = jmax (pk, std::abs (col.outMax), std::abs (col.outMin));
-            }
-            if (pk < 0.01f) continue;
-            const float x0 = plot.getX() + start * colW, x1 = x0 + win * colW - 3.0f;
-            g.fillRect (x0 + 1.5f, yFor (pk) - 1.0f, x1 - x0, 1.0f);
-            g.fillRect (x0 + 1.5f, yFor (-pk), x1 - x0, 1.0f);
-        }
-
         // 0 dBFS lines, flashing red after an over
         const bool clipped = lastFrameTime < clipFlashUntil;
         const bool flashing = clipped && std::fmod (lastFrameTime, 0.16) < 0.08;
@@ -356,20 +342,6 @@ namespace mcui
             g.drawDashedLine (Line<float> (plot.getX(), yFor (s), plot.getRight(), yFor (s)), dash, 2, clipped ? 1.5f : 1.0f);
         g.setFont (font (9.0f, true));
         g.drawText ("0 dBFS", Rectangle<float> (plot.getX() + 2, yFor (-1.0f) + 2, 48, 10), Justification::centredLeft);
-
-        // colour key: quiet (yellow) -> loud (red) through the spectrum
-        {
-            auto key = Rectangle<float> (150.0f, 6.0f).withPosition (screen.getRight() - 196.0f, screen.getBottom() - 14.0f);
-            for (int i = 0; i < 150; ++i)
-            {
-                g.setColour (loudnessColour (Decibels::decibelsToGain (-24.0f + 24.0f * (float) i / 149.0f)));
-                g.fillRect (key.getX() + (float) i, key.getY(), 1.0f, key.getHeight());
-            }
-            g.setFont (font (8.5f, true));
-            g.setColour (colours::textDim);
-            g.drawText ("QUIET", Rectangle<float> (key.getX() - 38.0f, key.getY() - 3.0f, 34.0f, 12.0f), Justification::centredRight);
-            g.drawText ("LOUD", Rectangle<float> (key.getRight() + 4.0f, key.getY() - 3.0f, 34.0f, 12.0f), Justification::centredLeft);
-        }
 
         // gain-reduction trace hanging from the top edge
         const float grTop = screen.getY() + 2.0f, grH = plot.getHeight() * 0.22f;

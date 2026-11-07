@@ -35,7 +35,7 @@ namespace mcdsp
         std::array<T, Capacity> buf {};
     };
 
-    /** One horizontal pixel-column of the scrolling waveform (~3.9 ms of audio). */
+    /** One horizontal pixel-column of the scrolling waveform (~2 ms of audio). */
     struct VisColumn
     {
         float outMin = 0, outMax = 0, inMin = 0, inMax = 0;
@@ -46,11 +46,11 @@ namespace mcdsp
 
     struct StereoFrame { float l = 0, r = 0; };
 
-    /** Builds VisColumns on the audio thread. 256 columns per second -> 1024 columns == 4 seconds. */
+    /** Builds VisColumns on the audio thread. 512 columns per second -> 2048 columns == 4 seconds. */
     class ColumnBuilder
     {
     public:
-        static constexpr int columnsPerSecond = 256;
+        static constexpr int columnsPerSecond = 512;
 
         void prepare (double sr)
         {
