@@ -1,4 +1,4 @@
-name: Build Mod Con Fixer
+name: Build JLP DSP
 
 on:
   push:
@@ -14,11 +14,11 @@ jobs:
           - os: windows-latest
             name: Windows
             configure: cmake -B build -A x64
-            targets: ModConFixer_VST3 ModConFixer_Standalone
+            targets: JlpDsp_VST3 JlpDsp_Standalone
           - os: macos-latest
             name: macOS
             configure: cmake -B build -G Xcode
-            targets: ModConFixer_VST3 ModConFixer_AU ModConFixer_Standalone
+            targets: JlpDsp_VST3 JlpDsp_AU JlpDsp_Standalone
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -39,9 +39,9 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: Mod-Con-Fixer-${{ matrix.name }}
+          name: JLP-DSP-${{ matrix.name }}
           path: |
-            build/ModConFixer_artefacts/Release/VST3
-            build/ModConFixer_artefacts/Release/AU
-            build/ModConFixer_artefacts/Release/Standalone
+            build/JlpDsp_artefacts/Release/VST3
+            build/JlpDsp_artefacts/Release/AU
+            build/JlpDsp_artefacts/Release/Standalone
           if-no-files-found: error

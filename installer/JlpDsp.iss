@@ -1,16 +1,16 @@
 ; ---------------------------------------------------------------------------
-;  Mod Con Fixer - Windows installer (Inno Setup 6)
-;  Build with build_installer.bat (or: ISCC.exe installer\ModConFixer.iss)
+;  JLP DSP - Windows installer (Inno Setup 6)
+;  Build with build_installer.bat (or: ISCC.exe installer\JlpDsp.iss)
 ;  after build_windows.bat has produced the Release VST3 + Standalone.
 ; ---------------------------------------------------------------------------
 
-#define AppName      "Mod Con Fixer"
+#define AppName      "JLP DSP"
 #define AppVersion   "1.0.0"
-#define AppPublisher "Mod Con DSP"
-#define Art          "..\build\ModConFixer_artefacts\Release"
+#define AppPublisher "Mod Con"
+#define Art          "..\build\JlpDsp_artefacts\Release"
 
 [Setup]
-AppId={{3F8A2D71-9B4E-4C6A-A5D2-7E19C0B4F863}
+AppId={{A41C7E09-5D3B-4F82-B6E1-29D8F0C5A374}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
@@ -23,8 +23,8 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
-OutputBaseFilename=Mod Con Fixer Setup {#AppVersion}
-SetupIconFile=ModConFixer.ico
+OutputBaseFilename=JLP DSP Setup {#AppVersion}
+SetupIconFile=JlpDsp.ico
 UninstallDisplayIcon={app}\{#AppName}.exe
 UninstallDisplayName={#AppName} {#AppVersion}
 WizardStyle=modern
@@ -64,4 +64,4 @@ Filename: "{app}\{#AppName}.exe"; Description: "Launch {#AppName}"; Components: 
 Type: filesandordirs; Name: "{commoncf64}\VST3\{#AppName}.vst3"
 
 [Messages]
-FinishedLabel=Setup has installed [name] on your computer.%n%nOpen your DAW and rescan plugins - it appears under "Mod Con DSP".
+FinishedLabel=Setup has installed [name] on your computer.%n%nOpen your DAW and rescan plugins - it appears under "Mod Con".
