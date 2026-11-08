@@ -1,16 +1,16 @@
 ; ---------------------------------------------------------------------------
-;  JLP Mix Doctor - Windows installer (Inno Setup 6)
-;  Build with build_installer.bat (or: ISCC.exe installer\JlpMixDoctor.iss)
+;  JLP Mix Fixer - Windows installer (Inno Setup 6)
+;  Build with build_installer.bat (or: ISCC.exe installer\JlpMixFixer.iss)
 ;  after build_windows.bat has produced the Release VST3 + Standalone.
 ; ---------------------------------------------------------------------------
 
-#define AppName      "JLP Mix Doctor"
+#define AppName      "JLP Mix Fixer"
 #define AppVersion   "1.0.0"
-#define AppPublisher "Mod Con"
-#define Art          "..\build\JlpMixDoctor_artefacts\Release"
+#define AppPublisher "Mod Con DSP"
+#define Art          "..\build\JlpMixFixer_artefacts\Release"
 
 [Setup]
-AppId={{C7D35B92-1E46-4A8F-9F03-6B2E8D4A7C15}
+AppId={{5E2B9F40-7C18-4D63-8A9E-D1F4036B2C87}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
@@ -23,8 +23,8 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
-OutputBaseFilename=JLP Mix Doctor Setup {#AppVersion}
-SetupIconFile=JlpMixDoctor.ico
+OutputBaseFilename=JLP Mix Fixer Setup {#AppVersion}
+SetupIconFile=JlpMixFixer.ico
 UninstallDisplayIcon={app}\{#AppName}.exe
 UninstallDisplayName={#AppName} {#AppVersion}
 WizardStyle=modern
@@ -64,4 +64,4 @@ Filename: "{app}\{#AppName}.exe"; Description: "Launch {#AppName}"; Components: 
 Type: filesandordirs; Name: "{commoncf64}\VST3\{#AppName}.vst3"
 
 [Messages]
-FinishedLabel=Setup has installed [name] on your computer.%n%nOpen your DAW and rescan plugins - it appears under "Mod Con".
+FinishedLabel=Setup has installed [name] on your computer.%n%nOpen your DAW and rescan plugins - it appears under "Mod Con DSP".

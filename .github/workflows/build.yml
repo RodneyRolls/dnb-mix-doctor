@@ -1,4 +1,4 @@
-name: Build JLP Mix Doctor
+name: Build JLP Mix Fixer
 
 on:
   push:
@@ -14,11 +14,11 @@ jobs:
           - os: windows-latest
             name: Windows
             configure: cmake -B build -A x64
-            targets: JlpMixDoctor_VST3 JlpMixDoctor_Standalone
+            targets: JlpMixFixer_VST3 JlpMixFixer_Standalone
           - os: macos-latest
             name: macOS
             configure: cmake -B build -G Xcode
-            targets: JlpMixDoctor_VST3 JlpMixDoctor_AU JlpMixDoctor_Standalone
+            targets: JlpMixFixer_VST3 JlpMixFixer_AU JlpMixFixer_Standalone
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -39,9 +39,9 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: JLP-Mix-Doctor-${{ matrix.name }}
+          name: JLP-Mix-Fixer-${{ matrix.name }}
           path: |
-            build/JlpMixDoctor_artefacts/Release/VST3
-            build/JlpMixDoctor_artefacts/Release/AU
-            build/JlpMixDoctor_artefacts/Release/Standalone
+            build/JlpMixFixer_artefacts/Release/VST3
+            build/JlpMixFixer_artefacts/Release/AU
+            build/JlpMixFixer_artefacts/Release/Standalone
           if-no-files-found: error

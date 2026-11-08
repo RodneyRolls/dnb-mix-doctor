@@ -211,7 +211,7 @@ void DnBMixDoctorEditor::Panel::renderBackground (float scale)
     // ---- title: the original wordmark face
     g.setFont (mcui::retroFont (27.0f, true).withExtraKerningFactor (0.18f));
     g.setColour (col::text);
-    g.drawText ("JLP MIX DOCTOR", Rectangle<float> (0.0f, 54.0f, (float) W, 32.0f), Justification::centred, false);
+    g.drawText ("JLP MIX FIXER", Rectangle<float> (0.0f, 54.0f, (float) W, 32.0f), Justification::centred, false);
     mcui::drawCaption (g, "Drum & bass mix repair  +  loudness maximizer", { 0.0f, 84.0f, (float) W, 12.0f },
                        Justification::centred, col::textFaint, 9.0f);
     mcui::drawCaption (g, "Presets", { 92.0f, 60.0f, 80.0f, 32.0f });
@@ -225,7 +225,7 @@ void DnBMixDoctorEditor::Panel::renderBackground (float scale)
     // ---- developer badge (bottom-left) and version (bottom-right)
     {
         const auto badgeFont = mcui::font (9.5f, true).withExtraKerningFactor (0.16f);
-        const String maker ("MOD CON");
+        const String maker ("MOD CON DSP");
         auto badge = Rectangle<float> (40.0f, 683.0f, mcui::textWidth (badgeFont, maker) + 26.0f, 14.0f);
         g.setColour (Colours::white.withAlpha (0.05f));
         g.fillRoundedRectangle (badge, 7.0f);
@@ -394,7 +394,7 @@ void DnBMixDoctorEditor::showMainMenu()
 {
     PopupMenu menu;
     const bool os = proc.apvts.getParameter (params::oversample)->getValue() > 0.5f;
-    menu.addSectionHeader ("JLP Mix Doctor  1.0  -  Mod Con");
+    menu.addSectionHeader ("JLP Mix Fixer  1.0  -  Mod Con DSP");
     menu.addItem (1, "4x oversampling (saturation + limiter)", true, os);
     menu.addItem (2, "Reset meters + re-learn loudness (new song)");
     menu.addItem (3, String ("Switch to ") + (proc.isOnB() ? "A" : "B") + " (compare)");

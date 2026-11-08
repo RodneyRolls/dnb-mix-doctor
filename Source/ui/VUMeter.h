@@ -182,7 +182,7 @@ namespace mcui
             g.setFont (retroFont (jmax (7.0f, geo.window.getHeight() * 0.065f)));
             const auto labels = geo.window.withTrimmedBottom (housing + 2.0f).reduced (7.0f, 0.0f);
             g.drawText (name, labels, Justification::bottomLeft);
-            g.drawText ("MOD CON", labels, Justification::bottomRight);
+            g.drawText ("MOD CON DSP", labels, Justification::bottomRight);
         }
 
         juce::String name;
