@@ -1,14 +1,14 @@
-# Rolls Mix Fixer — Mod Con DSP
+# Mod Con Fixer — Mod Con DSP
 
 A one-stop mix repair processor for drum & bass (160–178 BPM). Put it on the master or a drum/bass bus:
 it fixes phasey sub, kick/bass clashes, weak transients, mud, reese resonances, harsh highs, dull top end,
 uncontrolled width and low loudness, and finishes with a clipper + true-peak limiter loudness maximizer.
-Rolls Mix Fixer is the successor to DnB Mix Doctor V1/V2, The Mix Fixer and Dr Rolls Mix Fixer.
+Mod Con Fixer is the successor to DnB Mix Doctor V1/V2, The Mix Fixer, Dr Rolls Mix Fixer and Rolls Mix Fixer.
 
 VST3 (Windows + macOS), AU (macOS) and Standalone. JUCE 9.0.5, C++17, CMake.
 
-Plugin codes: manufacturer **Mod Con DSP** / `MCDS`, plugin `RlMF`, bundle `com.modcondsp.rollsmixfixer`
-(its own identity, so it installs next to the earlier versions). The standalone `Rolls Mix Fixer.exe` uses a
+Plugin codes: manufacturer **Mod Con DSP** / `MCDS`, plugin `MCFx`, bundle `com.modcondsp.modconfixer`
+(its own identity, so it installs next to the earlier versions). The standalone `Mod Con Fixer.exe` uses a
 VU-meter app icon (`Resources/icon.png`, drawn by `DnBMixDoctorSnapshot --icon <png>`).
 
 ## Highlights
@@ -45,15 +45,15 @@ You need CMake 3.22+ and Git. The first configure downloads JUCE 9.0.5 automatic
 or by hand:
 
     cmake -B build -G "Visual Studio 17 2022" -A x64
-    cmake --build build --config Release --target RollsMixFixer_VST3 RollsMixFixer_Standalone
+    cmake --build build --config Release --target ModConFixer_VST3 ModConFixer_Standalone
 
-Copy `build\RollsMixFixer_artefacts\Release\VST3\Rolls Mix Fixer.vst3` to `C:\Program Files\Common Files\VST3\`.
+Copy `build\ModConFixer_artefacts\Release\VST3\Mod Con Fixer.vst3` to `C:\Program Files\Common Files\VST3\`.
 
 **Windows installer** (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php): `winget install JRSoftware.InnoSetup`):
 
     build_installer.bat
 
-This builds the plugin, then writes `dist\Rolls Mix Fixer Setup 1.0.0.exe` from `installer\RollsMixFixer.iss`.
+This builds the plugin, then writes `dist\Mod Con Fixer Setup 1.0.0.exe` from `installer\ModConFixer.iss`.
 The installer puts the VST3 in `C:\Program Files\Common Files\VST3\`, and can optionally install the standalone app
 with Start-menu and desktop shortcuts. It appears in *Settings > Apps*, where it can be uninstalled cleanly.
 The installer is unsigned, so Windows SmartScreen may warn on first run ("More info > Run anyway").
@@ -65,7 +65,7 @@ The installer is unsigned, so Windows SmartScreen may warn on first run ("More i
 or by hand:
 
     cmake -B build -G Xcode
-    cmake --build build --config Release --target RollsMixFixer_VST3 RollsMixFixer_AU RollsMixFixer_Standalone
+    cmake --build build --config Release --target ModConFixer_VST3 ModConFixer_AU ModConFixer_Standalone
 
 Copy the `.vst3` to `~/Library/Audio/Plug-Ins/VST3/` and the `.component` to `~/Library/Audio/Plug-Ins/Components/`.
 For distribution, sign and notarise the bundles (`codesign` + `notarytool`).
@@ -146,8 +146,8 @@ it's listening to cancel. The reference curve is an engineering estimate, not me
 ### Presets
 Factory: Default, Liquid Polish, Neuro Smash, Jump Up Bounce, Rollers Sub Fix, Jungle Breaks, Club Loud,
 Gentle Master Assist. User presets save as `.mcdpreset` files in
-`%APPDATA%\Mod Con DSP\Rolls Mix Fixer\Presets` (Windows) or
-`~/Library/Application Support/Mod Con DSP/Rolls Mix Fixer/Presets` (macOS). The star marks favourites; A/B swaps
+`%APPDATA%\Mod Con DSP\Mod Con Fixer\Presets` (Windows) or
+`~/Library/Application Support/Mod Con DSP/Mod Con Fixer/Presets` (macOS). The star marks favourites; A/B swaps
 two complete settings without touching the power switch or oversampling mode.
 
 ## Source layout

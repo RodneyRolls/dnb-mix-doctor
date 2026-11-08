@@ -1,16 +1,16 @@
 ; ---------------------------------------------------------------------------
-;  Rolls Mix Fixer - Windows installer (Inno Setup 6)
-;  Build with build_installer.bat (or: ISCC.exe installer\RollsMixFixer.iss)
+;  Mod Con Fixer - Windows installer (Inno Setup 6)
+;  Build with build_installer.bat (or: ISCC.exe installer\ModConFixer.iss)
 ;  after build_windows.bat has produced the Release VST3 + Standalone.
 ; ---------------------------------------------------------------------------
 
-#define AppName      "Rolls Mix Fixer"
+#define AppName      "Mod Con Fixer"
 #define AppVersion   "1.0.0"
 #define AppPublisher "Mod Con DSP"
-#define Art          "..\build\RollsMixFixer_artefacts\Release"
+#define Art          "..\build\ModConFixer_artefacts\Release"
 
 [Setup]
-AppId={{6B1E4C1A-52F3-4E7B-9C0E-1D2A9F3B7A11}
+AppId={{3F8A2D71-9B4E-4C6A-A5D2-7E19C0B4F863}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
@@ -23,8 +23,8 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
-OutputBaseFilename=Rolls Mix Fixer Setup {#AppVersion}
-SetupIconFile=RollsMixFixer.ico
+OutputBaseFilename=Mod Con Fixer Setup {#AppVersion}
+SetupIconFile=ModConFixer.ico
 UninstallDisplayIcon={app}\{#AppName}.exe
 UninstallDisplayName={#AppName} {#AppVersion}
 WizardStyle=modern

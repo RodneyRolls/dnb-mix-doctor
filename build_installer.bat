@@ -1,6 +1,6 @@
 @echo off
 REM ---------------------------------------------------------------------------
-REM  Builds the Windows installer:  dist\Rolls Mix Fixer Setup 1.0.0.exe
+REM  Builds the Windows installer:  dist\Mod Con Fixer Setup 1.0.0.exe
 REM  Runs build_windows.bat first, then Inno Setup 6
 REM  (install it with:  winget install JRSoftware.InnoSetup).
 REM ---------------------------------------------------------------------------
@@ -18,9 +18,9 @@ if not defined ISCC (
     goto :fail
 )
 
-"%ISCC%" /Q "installer\RollsMixFixer.iss" || goto :fail
+"%ISCC%" /Q "installer\ModConFixer.iss" || goto :fail
 echo.
-echo  Installer ready:  dist\Rolls Mix Fixer Setup 1.0.0.exe
+echo  Installer ready:  dist\Mod Con Fixer Setup 1.0.0.exe
 exit /b 0
 
 :fail

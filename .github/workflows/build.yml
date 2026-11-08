@@ -1,4 +1,4 @@
-name: Build Rolls Mix Fixer
+name: Build Mod Con Fixer
 
 on:
   push:
@@ -14,11 +14,11 @@ jobs:
           - os: windows-latest
             name: Windows
             configure: cmake -B build -A x64
-            targets: RollsMixFixer_VST3 RollsMixFixer_Standalone
+            targets: ModConFixer_VST3 ModConFixer_Standalone
           - os: macos-latest
             name: macOS
             configure: cmake -B build -G Xcode
-            targets: RollsMixFixer_VST3 RollsMixFixer_AU RollsMixFixer_Standalone
+            targets: ModConFixer_VST3 ModConFixer_AU ModConFixer_Standalone
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -39,9 +39,9 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: Dr-Rolls-Mix-Fixer-${{ matrix.name }}
+          name: Mod-Con-Fixer-${{ matrix.name }}
           path: |
-            build/RollsMixFixer_artefacts/Release/VST3
-            build/RollsMixFixer_artefacts/Release/AU
-            build/RollsMixFixer_artefacts/Release/Standalone
+            build/ModConFixer_artefacts/Release/VST3
+            build/ModConFixer_artefacts/Release/AU
+            build/ModConFixer_artefacts/Release/Standalone
           if-no-files-found: error

@@ -40,7 +40,7 @@ PresetManager::PresetManager (juce::AudioProcessorValueTreeState& s) : apvts (s)
 juce::File PresetManager::getUserFolder()
 {
     auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("Mod Con DSP").getChildFile ("Rolls Mix Fixer").getChildFile ("Presets");
+                   .getChildFile ("Mod Con DSP").getChildFile ("Mod Con Fixer").getChildFile ("Presets");
     dir.createDirectory();
     return dir;
 }
@@ -123,7 +123,7 @@ bool PresetManager::saveUser (const juce::String& rawName)
     const auto name = juce::File::createLegalFileName (rawName.trim());
     if (name.isEmpty() || getFactoryNames().contains (name)) return false;
 
-    juce::XmlElement xml ("RollsMixFixerPreset");
+    juce::XmlElement xml ("ModConFixerPreset");
     xml.setAttribute ("version", params::version);
     for (auto* p : apvts.processor.getParameters())
         if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
