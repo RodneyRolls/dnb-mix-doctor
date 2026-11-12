@@ -91,9 +91,14 @@ namespace mcdsp
         // filter re-introduces, so the 4x path honours the dBTP ceiling as strictly as the 1x path
         limiterOsCatch.prepare (sr, std::max (8, lookahead / 2), true, 0.03);
 
+        // MULTIBAND maximiser stage (3 ms look-ahead). Present in both modes so latency never changes.
+        const int mbLook = std::max (8, (int) std::lround (0.003 * sr));
+        mbBase.prepare (sr, mbLook);
+        mbOs.prepare (sr * 4.0, 4 * (mbLook - 1) + 1);   // 4(L-1) samples at 4x == L-1 at 1x
+
         const int osLatency = (int) std::lround (oversampler->getLatencyInSamples());
-        const int baseTotal = limiterBase.getLatency();
-        const int osTotal = osLatency + lookahead + limiterOsCatch.getLatency();
+        const int baseTotal = limiterBase.getLatency() + mbBase.getLatency();
+        const int osTotal = osLatency + lookahead + (mbLook - 1) + limiterOsCatch.getLatency();
         totalLatency = std::max (baseTotal, osTotal);
         padBase = totalLatency - baseTotal;
         padOs = totalLatency - osTotal;
@@ -138,7 +143,7 @@ namespace mcdsp
         glueEnvDb = glueAvgGr = 0;
 
         if (oversampler) oversampler->reset();
-        limiterBase.reset(); limiterOs.reset(); limiterOsCatch.reset();
+        limiterBase.reset(); limiterOs.reset(); limiterOsCatch.reset(); mbBase.reset(); mbOs.reset();
         dcBase.reset(); dcOs.reset();
         firstBlock = true;
         dryDelay.reset(); padDelayBase.reset(); padDelayOs.reset();
@@ -564,6 +569,7 @@ namespace mcdsp
                 modeFade = fadeFrom = 0.0f;
                 activeOs = p.oversample;
                 oversampler->reset(); limiterBase.reset(); limiterOs.reset(); limiterOsCatch.reset(); dcBase.reset(); dcOs.reset();
+                mbBase.reset(); mbOs.reset();
                 padDelayBase.reset(); padDelayOs.reset();
             }
         }
@@ -580,6 +586,8 @@ namespace mcdsp
         const float ceiling = dbToGain (p.ceilingDb);
         const float clipThreshold = dbToGain (clipThresholdDb (p));
         const float sat = p.saturate * p.fix;
+        mbBase.setEnabled (p.multiband);
+        mbOs.setEnabled (p.multiband);
 
         if (activeOs)
         {
@@ -592,7 +600,8 @@ namespace mcdsp
                 for (int i = 0; i < un; ++i) upPtrs[ch][i] = dcOs.process (ch, upPtrs[ch][i]);
             applyGainRamp (upPtrs, numCh, un, gainStart, gainEnd);
             clipDb = softClip (upPtrs, numCh, un, clipThreshold);   // alias-free at 4x
-            limiterGrDb = limiterOs.process (upPtrs, numCh, un, ceiling * 0.989f);   // ~0.1 dB margin for the decimator
+            const float mbGr = mbOs.process (upPtrs, numCh, un, ceiling * 0.989f);
+            limiterGrDb = std::min (mbGr, limiterOs.process (upPtrs, numCh, un, ceiling * 0.989f));   // ~0.1 dB margin for the decimator
             oversampler->processSamplesDown (block);
             limiterGrDb = std::min (limiterGrDb, limiterOsCatch.process (io, numCh, n, ceiling));
             padDelayOs.processBlock (io, numCh, n);
@@ -604,7 +613,8 @@ namespace mcdsp
                 for (int i = 0; i < n; ++i) io[ch][i] = dcBase.process (ch, io[ch][i]);
             applyGainRamp (io, numCh, n, gainStart, gainEnd);
             clipDb = softClip (io, numCh, n, clipThreshold);
-            limiterGrDb = limiterBase.process (io, numCh, n, ceiling);
+            const float mbGr = mbBase.process (io, numCh, n, ceiling);
+            limiterGrDb = std::min (mbGr, limiterBase.process (io, numCh, n, ceiling));
             padDelayBase.processBlock (io, numCh, n);
         }
 

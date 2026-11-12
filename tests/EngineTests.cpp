@@ -245,14 +245,108 @@ int main()
                    full, half, cut, top, off);
         }
 
+        // 5c. MULTIBAND maximiser: ceiling still holds on both paths, the hats are ducked less by the kicks
+        //     than with the CLASSIC broadband limiter, and switching modes mid-stream is clean.
+        {
+            // pumping: level of the highs (> 6 kHz) during the first 60 ms of every kick, relative to the highs
+            // everywhere else, in dB. 0 = the kicks do not duck the hats at all.
+            auto hfDuckDb = [&] (const juce::AudioBuffer<float>& x, int from, int offset)
+            {
+                Svf h1, h2; h1.setup (Svf::Mode::highpass, sr, 6000.0, 0.7071); h2 = h1;
+                const double beat = 60.0 / 174.0;
+                double sIn = 0, sOut = 0; int nIn = 0, nOut = 0;
+                for (int i = 0; i < x.getNumSamples(); ++i)
+                {
+                    const float v = h2.process (h1.process (x.getSample (0, i)));
+                    if (i < from) continue;
+                    const double t = (i - offset) / sr;
+                    const bool kick = ((int) (t / beat)) % 2 == 0 && std::fmod (t, beat) < 0.03;
+                    (kick ? sIn : sOut) += (double) v * v;
+                    ++(kick ? nIn : nOut);
+                }
+                return 10.0 * std::log10 ((sIn / nIn + 1e-20) / (sOut / nOut + 1e-20));
+            };
+            auto lufsOf = [&] (const juce::AudioBuffer<float>& x, int from)
+            {
+                LoudnessMeter m; m.prepare (sr);
+                const float* rd[2] = { x.getReadPointer (0, from), x.getReadPointer (1, from) };
+                m.process (rd, 2, x.getNumSamples() - from);
+                return m.getIntegrated();
+            };
+
+            // steady high hiss (hats) + loud sub kicks on every other beat: only the kicks hit the ceiling
+            juce::AudioBuffer<float> src (2, (int) (sr * 12.0));
+            {
+                std::normal_distribution<float> noise (0.0f, 1.0f);
+                Svf hp1, hp2; hp1.setup (Svf::Mode::highpass, sr, 7000.0, 0.7071); hp2 = hp1;
+                const double beat = 60.0 / 174.0;
+                for (int i = 0; i < src.getNumSamples(); ++i)
+                {
+                    const double t = i / sr, inBeat = std::fmod (t, beat);
+                    const float kick = ((int) (t / beat)) % 2 == 0
+                        ? (float) (std::sin (2 * kPi * 55.0 * inBeat) * std::exp (-inBeat * 6)) * 4.0f : 0.0f;   // ~13 dB over the ceiling
+                    const float hiss = hp2.process (hp1.process (noise (rng))) * 0.08f;
+                    src.setSample (0, i, kick + hiss);
+                    src.setSample (1, i, kick + hiss);
+                }
+            }
+            double hf[2] {}, lu[2] {};
+            float tps[2][2] {};
+            for (int mb = 0; mb < 2; ++mb)
+                for (int os = 0; os < 2; ++os)
+                {
+                    MixEngine e; e.prepare (sr, 512, 2);
+                    auto b = src;
+                    auto p = neutral(); p.autoGainMix = 0; p.ceilingDb = -1.0f; p.clipper = 0; p.oversample = os == 1;
+                    p.multiband = mb == 1;
+                    run (e, b, p);
+                    tps[mb][os] = truePeakDb (b, e.getLatency() + (int) sr / 10);
+                    if (os == 1)
+                    {
+                        const int from = (int) (sr * 6.0), L = e.getLatency();
+                        hf[mb] = hfDuckDb (b, from + L, L) - hfDuckDb (src, from, 0);
+                    }
+                }
+            // loudness on the full test mix at the same settings (auto gain on)
+            const auto song = makeMix (sr, 12.0, 0.6f);
+            for (int mb = 0; mb < 2; ++mb)
+                {
+                    MixEngine e; e.prepare (sr, 512, 2);
+                    auto b = song;
+                    auto p = neutral(); p.loudnessLufs = -5.0f; p.ceilingDb = -1.0f; p.multiband = mb == 1;
+                    run (e, b, p);
+                    lu[mb] = lufsOf (b, (int) (sr * 6.0));
+                }
+            CHECK (tps[1][0] <= -1.0f + 0.05f && tps[1][1] <= -1.0f + 0.05f,
+                   "MULTIBAND true peak %.2f (1x) / %.2f (4x) dBTP with ceiling -1.0", tps[1][0], tps[1][1]);
+            CHECK (hf[1] > -0.6 && hf[1] > hf[0] + 0.4,
+                   "less pumping: hats duck %+.2f dB on 13 dB-over kicks with MULTIBAND vs %+.2f dB CLASSIC", hf[1], hf[0]);
+            CHECK (lu[1] > lu[0] - 0.2, "loudness on the test mix: %.2f LUFS MULTIBAND vs %.2f LUFS CLASSIC", lu[1], lu[0]);
+
+            // switch CLASSIC -> MULTIBAND -> CLASSIC while playing
+            MixEngine e; e.prepare (sr, 512, 2);
+            auto b = makeMix (sr, 6.0, 0.6f);
+            auto p = neutral(); p.loudnessLufs = -6.0f; p.ceilingDb = -1.0f;
+            const int third = b.getNumSamples() / 3;
+            for (int s = 0; s < b.getNumSamples(); s += 512)
+            {
+                const int n = std::min (512, b.getNumSamples() - s);
+                p.multiband = s >= third && s < 2 * third;
+                float* io[2] = { b.getWritePointer (0, s), b.getWritePointer (1, s) };
+                e.process (io, 2, n, p);
+            }
+            const float tp = truePeakDb (b, e.getLatency() + (int) sr / 10);
+            CHECK (finite (b) && tp <= -1.0f + 0.05f, "mode switching mid-stream: finite, true peak %.2f dBTP", tp);
+        }
+
         // 6. mono layout runs and stays finite
         {
             MixEngine e; e.prepare (sr, 512, 1);
             auto st = makeMix (sr, 2.0, 0.5f);
             juce::AudioBuffer<float> b (1, st.getNumSamples()); b.copyFrom (0, 0, st, 0, 0, st.getNumSamples());
-            EngineParams p; p.oversample = true;
+            EngineParams p; p.oversample = true; p.multiband = true;
             run (e, b, p, 333);
-            CHECK (finite (b), "mono + 4x oversampling, odd block size: output finite");
+            CHECK (finite (b), "mono + 4x oversampling + MULTIBAND, odd block size: output finite");
         }
     }
 
@@ -260,13 +354,13 @@ int main()
     {
         MixEngine e; e.prepare (48000.0, 256, 2);
         auto b = makeMix (48000.0, 60.0, 0.4f);
-        EngineParams p; p.oversample = true;
+        EngineParams p; p.oversample = true; p.multiband = true;
         p.subTight = p.kickBass = p.punch = p.snap = p.mud = p.reese = p.harsh = p.air = p.glue = p.saturate = 0.5f;
         for (size_t k = 0; k < p.eqDb.size(); ++k) p.eqDb[k] = (k % 2 == 0) ? 3.0f : -3.0f;   // all 16 EQ bands active
         const auto t0 = juce::Time::getMillisecondCounterHiRes();
         run (e, b, p, 256);
         const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
-        std::printf ("\n  [INFO] 60 s stereo @48k with 4x OS processed in %.0f ms -> %.2f %% of one core\n", ms, ms / 600.0);
+        std::printf ("\n  [INFO] 60 s stereo @48k with 4x OS + MULTIBAND processed in %.0f ms -> %.2f %% of one core\n", ms, ms / 600.0);
     }
 
     std::printf ("\n%s (%d failure%s)\n", failures == 0 ? "ALL PASSED" : "FAILURES", failures, failures == 1 ? "" : "s");

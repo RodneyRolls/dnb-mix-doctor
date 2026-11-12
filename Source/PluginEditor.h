@@ -58,6 +58,7 @@ private:
                      folderButton { "Preset browser", Icon::folder, false },
                      abButton { "A/B", Icon::none, true },
                      releaseAutoButton { "Auto release", Icon::none, true },
+                     multibandButton { "Multiband maximizer", Icon::none, true },
                      advancedButton { "Advanced", Icon::none, true };
     juce::ComboBox presetBox;
     mcui::Readout cpuDisplay { {}, "% CPU" };
@@ -74,6 +75,7 @@ private:
     std::array<juce::Rectangle<int>, 22> knobCells;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> sliderAttachments;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> releaseAutoAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> multibandAttachment;
 
     struct Sweep { juce::RangedAudioParameter* param; float from, to; double delay; };
     std::vector<Sweep> sweeps;

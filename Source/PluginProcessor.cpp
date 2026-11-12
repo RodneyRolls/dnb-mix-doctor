@@ -18,6 +18,7 @@ DnBMixDoctorProcessor::DnBMixDoctorProcessor()
     bind (pLoudness, params::loudness); bind (pCeiling, params::ceiling);   bind (pFix, params::fix);
     bind (pMix, params::mix);           bind (pOutput, params::output);     bind (pReleaseAuto, params::releaseAuto);
     bind (pBypass, params::bypass);     bind (pOversample, params::oversample);
+    bind (pMultiband, params::multiband);
     for (int i = 0; i < params::numEqBands; ++i) bind (pEq[(size_t) i], params::eqBand (i));
     bind (pEqMix, params::eqMix);       bind (pEqOn, params::eqOn);
 
@@ -66,6 +67,7 @@ mcdsp::EngineParams DnBMixDoctorProcessor::readParams() const noexcept
     p.fix = pFix.get() * 0.01f;          p.mix = pMix.get() * 0.01f;
     p.outputDb = pOutput.get();
     p.bypass = pBypass.get() > 0.5f;     p.oversample = pOversample.get() > 0.5f;
+    p.multiband = pMultiband.get() > 0.5f;
     for (size_t i = 0; i < p.eqDb.size(); ++i) p.eqDb[i] = pEq[i].get();
     p.eqMix = pEqMix.get() * 0.01f;      p.eqOn = pEqOn.get() > 0.5f;
     return p;

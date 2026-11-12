@@ -25,7 +25,7 @@ namespace mcdsp
         retuned every sub-block (used for all dynamic EQ bands). Up to 2 channels. */
     struct Svf
     {
-        enum class Mode { lowpass, highpass, bandpass, bell, highShelf };
+        enum class Mode { lowpass, highpass, bandpass, bell, highShelf, allpass };
 
         void reset() noexcept { ic1 = {}; ic2 = {}; }
 
@@ -44,6 +44,7 @@ namespace mcdsp
                 case Mode::bandpass:  M1 = k; break;                        // unity peak gain
                 case Mode::bell:      k = 1.0 / (q * A); M0 = 1; M1 = k * (A * A - 1.0); break;
                 case Mode::highShelf: g *= std::sqrt (A); M0 = A * A; M1 = k * (1.0 - A) * A; M2 = 1.0 - A * A; break;
+                case Mode::allpass:   M0 = 1; M1 = -2.0 * k; break;
             }
 
             a1 = (float) (1.0 / (1.0 + g * (g + k)));

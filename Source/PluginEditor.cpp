@@ -28,7 +28,7 @@ DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
     addAndMakeVisible (panel);
 
     for (auto* b : { &powerButton, &autoFixButton, &prevButton, &nextButton, &starButton, &menuButton,
-                     &folderButton, &abButton, &releaseAutoButton, &advancedButton })
+                     &folderButton, &abButton, &releaseAutoButton, &multibandButton, &advancedButton })
         panel.addAndMakeVisible (b);
     for (auto* c : std::initializer_list<Component*> { &presetBox, &cpuDisplay, &visualizer, &vuLeft, &vuRight,
                                                         &lufsIntDisplay, &lufsShortDisplay, &truePeakDisplay, &grDisplay })
@@ -37,6 +37,9 @@ DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
     abButton.setText ("A");
     releaseAutoButton.setText ("AUTO");
     releaseAutoButton.setClickingTogglesState (true);
+    multibandButton.setText ("MULTIBAND");
+    multibandButton.setClickingTogglesState (true);
+    multibandButton.setTooltip ("Maximizer mode: off = CLASSIC broadband limiter, on = MULTIBAND smart-release limiter");
     advancedButton.setText ("ADVANCED");
 
     // ---- knobs
@@ -52,6 +55,7 @@ DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
         k.setBipolar (id == params::input || id == params::output || id == params::width);
     }
     releaseAutoAttachment = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, params::releaseAuto, releaseAutoButton);
+    multibandAttachment = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, params::multiband, multibandButton);
 
     // ---- ADVANCED: the 16-band EQ panel slides over the knob section
     panel.addChildComponent (eqPanel);
@@ -167,6 +171,8 @@ void DnBMixDoctorEditor::layout()
     }
     const auto relCell = knobCells[(size_t) params::knobOrder.indexOf (params::release)];
     releaseAutoButton.setBounds (relCell.getCentreX() - 26, relCell.getBottom() - 21, 52, 19);
+    const auto loudCell = knobCells[(size_t) params::knobOrder.indexOf (params::loudness)];
+    multibandButton.setBounds (loudCell.getCentreX() - 44, loudCell.getBottom() - 21, 88, 19);
     eqPanel.setBounds (sectionArea[0].getUnion (sectionArea[1]));
 }
 
@@ -177,6 +183,7 @@ void DnBMixDoctorEditor::setAdvancedOpen (bool open)
     if (open) eqPanel.toFront (false);
     for (auto& k : knobs) k.setVisible (! open);
     releaseAutoButton.setVisible (! open);
+    multibandButton.setVisible (! open);
     advancedButton.setToggleState (open, dontSendNotification);
 }
 

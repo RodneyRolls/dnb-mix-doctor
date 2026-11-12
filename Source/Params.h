@@ -48,6 +48,7 @@ namespace params
     inline const juce::String releaseAuto { "releaseAuto" };
     inline const juce::String bypass      { "bypass" };
     inline const juce::String oversample  { "oversample" };
+    inline const juce::String multiband   { "maxMultiband" };
 
     /** The 22 knobs in on-screen order (row 1 then row 2). */
     inline const juce::StringArray knobOrder {
@@ -112,6 +113,7 @@ namespace params
         p.push_back (std::make_unique<AudioParameterBool> (ParameterID { eqOn, version }, "EQ On", true));
 
         p.push_back (std::make_unique<AudioParameterBool> (ParameterID { releaseAuto, version }, "Release Auto", true));
+        p.push_back (std::make_unique<AudioParameterBool> (ParameterID { multiband, version }, "Multiband Maximizer", false));
         p.push_back (std::make_unique<AudioParameterBool> (ParameterID { bypass, version }, "Bypass", false));
         p.push_back (std::make_unique<AudioParameterBool> (ParameterID { oversample, version }, "4x Oversampling", true,
                          AudioParameterBoolAttributes().withAutomatable (false)));

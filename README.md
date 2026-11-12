@@ -28,6 +28,10 @@ VU-meter app icon (`Resources/icon.png`, drawn by `DnBMixDoctorSnapshot --icon <
   - LOUDNESS sets how loud the drops end up (−14…−3 LUFS).
   - AUTO GAIN sets how much of the automatic gain is applied: 100 % reaches the LOUDNESS target, 0 % applies none
     (the clipper and limiter work on your mix as it comes in).
+- **MULTIBAND maximizer mode** (button under LOUDNESS): instead of turning the whole mix down on every peak, a
+  4-band look-ahead stage works out which part of the spectrum caused the peak and turns down mostly that band, with
+  its own transient-aware release per band. Kicks no longer duck the hats, and bass is released slowly so it is not
+  chopped. Off = CLASSIC broadband limiter (the original sound).
 - **Stable loudness (no volume drift):** auto-gain learns the loudness of the loud sections and then holds it.
   The level does not sink as more of the track plays, does not jump in breakdowns, and does not change when you
   press play. Use *Menu → Reset meters + re-learn loudness* (or click the INTEGRATED readout) when you switch to
@@ -78,7 +82,7 @@ For distribution, sign and notarise the bundles (`codesign` + `notarytool`).
     build/DnBMixDoctorTests_artefacts/Release/DnBMixDoctorTests
 
 Checks, at 44.1/48/96/192 kHz: dry/wet latency alignment, level stability across intro → drop → breakdown → drop, AUTO GAIN at 0/50/100 %, wet impulse alignment in both oversampling modes,
-true-peak ceiling on a hot mix, loudness landing on target (including -5 and -4 LUFS with a -0.3 dBTP ceiling), sub-mono side removal, mono layout, and CPU use.
+true-peak ceiling on a hot mix, loudness landing on target (including -5 and -4 LUFS with a -0.3 dBTP ceiling), sub-mono side removal, MULTIBAND mode (ceiling, hats not ducked by kicks, loudness, switching mid-stream), mono layout, and CPU use.
 
     cmake --build build --config Release --target DnBMixDoctorSnapshot
     build/DnBMixDoctorSnapshot_artefacts/Release/DnBMixDoctorSnapshot <out-folder> [scale]
@@ -89,7 +93,7 @@ Renders the editor (WAVE / SPECTRUM / STEREO) to PNG with synthetic DnB audio fl
 
     INPUT → [LR4 @120 Hz: SUB TIGHT + KICK/BASS on the low band] → [LR4 @SUB MONO: mono lows, WIDTH above]
           → PUNCH → SNAP → MUD / REESE TAME / HARSH dynamic EQ → AIR → GLUE → ADVANCED 16-band EQ
-          → (4x oversampled when enabled: SATURATE → loudness auto-gain → soft clipper → limiter → catch limiter)
+          → (4x oversampled when enabled: SATURATE → loudness auto-gain → soft clipper → [MULTIBAND stage] → limiter → catch limiter)
           → latency-aligned MIX → OUTPUT → click-free bypass
 
 | Control | What it does |
@@ -110,6 +114,7 @@ Renders the editor (WAVE / SPECTRUM / STEREO) to PNG with synthetic DnB audio fl
 | CLIPPER | Soft clipper (tanh knee, 4x oversampled) in front of the limiter. 0 % = off; higher settings move its threshold from 6 dB over the ceiling down to 0.1 dB over it, so it takes more of the peaks off and the limiter works less. Louder and punchier, but grittier at high settings |
 | LOUDNESS | How loud the loud sections (drops) come out, −14…−3 LUFS short-term (default −7). Auto-gain learns the input loudness of the loud sections and holds it, plus a bounded make-up for what the clipper and limiter take off. It does not follow the running average, so the level stays put across the song |
 | AUTO GAIN | How much of the learned auto-gain is applied, 0–100 %. At 100 % the drops land on LOUDNESS; lower settings scale the gain down in dB (50 % = half the dB). The make-up for limiter loss only adapts at 100 % |
+| MULTIBAND | Maximizer mode. Off = CLASSIC: one broadband look-ahead limiter. On = MULTIBAND: a phase-coherent 4-band split (120 Hz / 1 kHz / 6 kHz); every overshoot is shared between the bands in proportion to how much each pushes the waveform towards the peak, each band capped at −12 dB, each with its own look-ahead gain and smart release (fast on transients, slow on sustained sound, slower for lows). The broadband true-peak limiter still runs after it, so the ceiling is guaranteed. Switching fades over 50 ms; latency is the same in both modes |
 | CEILING | True-peak ceiling −3…0 dBTP |
 | FIX AMOUNT | Macro that scales every corrective module (everything from SUB MONO to SATURATE) 0–100 % |
 | EQ (ADVANCED) | 16 bells at 25, 40, 63, 100, 160, 250, 400, 630 Hz, 1, 1.6, 2.5, 4, 6.3, 10, 14, 18 kHz (Q 1.8, ±12 dB). EQ MIX multiplies every band gain (no dry/wet phase smearing); EQ ON fades the curve out |
@@ -158,6 +163,7 @@ two complete settings without touching the power switch or oversampling mode.
     Source/PresetManager.*          factory/user presets, favourites
     Source/dsp/MixEngine.*          the full signal chain
     Source/dsp/TruePeakLimiter.h    look-ahead true-peak limiter
+    Source/dsp/MultibandMaximizer.h 4-band smart-release maximizer stage (MULTIBAND mode)
     Source/dsp/LoudnessMeter.h      BS.1770 / R128 meter
     Source/dsp/DspUtils.h           SVF, envelopes, delay, DC blocker, true-peak interpolator
     Source/analysis/VisualFifo.h    lock-free FIFOs + waveform column builder

@@ -2,6 +2,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include "DspUtils.h"
 #include "TruePeakLimiter.h"
+#include "MultibandMaximizer.h"
 #include "LoudnessMeter.h"
 
 namespace mcdsp
@@ -18,6 +19,7 @@ namespace mcdsp
               mud = 0.25f, reese = 0.2f, harsh = 0.25f, air = 0.2f, glue = 0.25f, attackMs = 10, releaseMs = 150,
               width = 1.0f, saturate = 0.15f, clipper = 0.3f, autoGainMix = 1.0f, loudnessLufs = -7, ceilingDb = -1, fix = 1.0f, mix = 1.0f, outputDb = 0;
         bool releaseAuto = true, bypass = false, oversample = true;
+        bool multiband = false;   // maximiser MODE: false = CLASSIC broadband, true = MULTIBAND smart release
         // ADVANCED: 16-band graphic EQ (dB per band), EQ MIX scales every band (0..1), EQ ON
         static constexpr int numEqBands = 16;
         std::array<float, numEqBands> eqDb {};
@@ -130,6 +132,7 @@ namespace mcdsp
         // ---- output stage
         std::unique_ptr<juce::dsp::Oversampling<float>> oversampler;
         TruePeakLimiter limiterBase, limiterOs, limiterOsCatch;
+        MultibandMaximizer mbBase, mbOs;
         DcBlocker dcBase, dcOs;
         LoudnessMeter preLoud, postLoud;
         float autoGainCur = 0, refLufs = -100.0f, lossDb = 0, quietTime = 0, prevAgMix = 1.0f;
