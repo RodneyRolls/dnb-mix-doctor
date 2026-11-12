@@ -1,16 +1,16 @@
 ; ---------------------------------------------------------------------------
-;  JLP Mix Doctor - Windows installer (Inno Setup 6)
-;  Build with build_installer.bat (or: ISCC.exe installer\JlpMixDoctor.iss)
+;  Dr Mix - Windows installer (Inno Setup 6)
+;  Build with build_installer.bat (or: ISCC.exe installer\DrMix.iss)
 ;  after build_windows.bat has produced the Release VST3 + Standalone.
 ; ---------------------------------------------------------------------------
 
-#define AppName      "JLP Mix Doctor"
+#define AppName      "Dr Mix"
 #define AppVersion   "1.0.0"
 #define AppPublisher "Mod Con DSP"
-#define Art          "..\build\JlpMixDoctor_artefacts\Release"
+#define Art          "..\build\DrMix_artefacts\Release"
 
 [Setup]
-AppId={{C7D35B92-1E46-4A8F-9F03-6B2E8D4A7C15}
+AppId={{9D4F61A3-2B7C-4E58-B0A6-83C5E1F72D94}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
@@ -23,8 +23,8 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
-OutputBaseFilename=JLP Mix Doctor Setup {#AppVersion}
-SetupIconFile=JlpMixDoctor.ico
+OutputBaseFilename=Dr Mix Setup {#AppVersion}
+SetupIconFile=DrMix.ico
 UninstallDisplayIcon={app}\{#AppName}.exe
 UninstallDisplayName={#AppName} {#AppVersion}
 WizardStyle=modern
