@@ -1,14 +1,14 @@
-# Dr Mix — Mod Con DSP
+# Fix Dr — Mod Con DSP
 
 A one-stop mix repair processor for drum & bass (160–178 BPM). Put it on the master or a drum/bass bus:
 it fixes phasey sub, kick/bass clashes, weak transients, mud, reese resonances, harsh highs, dull top end,
 uncontrolled width and low loudness, and finishes with a clipper + true-peak limiter loudness maximizer.
-Dr Mix is the successor to DnB Mix Doctor V1/V2, The Mix Fixer, Dr Rolls Mix Fixer, Rolls Mix Fixer, Mod Con Fixer, JLP DSP, JLP Mix Fixer and JLP Mix Doctor.
+Fix Dr is the successor to DnB Mix Doctor V1/V2, The Mix Fixer, Dr Rolls Mix Fixer, Rolls Mix Fixer, Mod Con Fixer, JLP DSP, JLP Mix Fixer, JLP Mix Doctor and Dr Mix.
 
 VST3 (Windows + macOS), AU (macOS) and Standalone. JUCE 9.0.5, C++17, CMake.
 
-Plugin codes: manufacturer **Mod Con DSP** / `MCDS`, plugin `DrMx`, bundle `com.modcondsp.drmix`
-(its own identity, so it installs next to the earlier versions). The standalone `Dr Mix.exe` uses a
+Plugin codes: manufacturer **Mod Con DSP** / `MCDS`, plugin `FxDr`, bundle `com.modcondsp.fixdr`
+(its own identity, so it installs next to the earlier versions). The standalone `Fix Dr.exe` uses a
 VU-meter app icon (`Resources/icon.png`, drawn by `DnBMixDoctorSnapshot --icon <png>`).
 
 ## Highlights
@@ -49,15 +49,15 @@ You need CMake 3.22+ and Git. The first configure downloads JUCE 9.0.5 automatic
 or by hand:
 
     cmake -B build -G "Visual Studio 17 2022" -A x64
-    cmake --build build --config Release --target DrMix_VST3 DrMix_Standalone
+    cmake --build build --config Release --target FixDr_VST3 FixDr_Standalone
 
-Copy `build\DrMix_artefacts\Release\VST3\Dr Mix.vst3` to `C:\Program Files\Common Files\VST3\`.
+Copy `build\FixDr_artefacts\Release\VST3\Fix Dr.vst3` to `C:\Program Files\Common Files\VST3\`.
 
 **Windows installer** (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php): `winget install JRSoftware.InnoSetup`):
 
     build_installer.bat
 
-This builds the plugin, then writes `dist\Dr Mix Setup 1.0.0.exe` from `installer\DrMix.iss`.
+This builds the plugin, then writes `dist\Fix Dr Setup 1.0.0.exe` from `installer\FixDr.iss`.
 The installer puts the VST3 in `C:\Program Files\Common Files\VST3\`, and can optionally install the standalone app
 with Start-menu and desktop shortcuts. It appears in *Settings > Apps*, where it can be uninstalled cleanly.
 The installer is unsigned, so Windows SmartScreen may warn on first run ("More info > Run anyway").
@@ -69,7 +69,7 @@ The installer is unsigned, so Windows SmartScreen may warn on first run ("More i
 or by hand:
 
     cmake -B build -G Xcode
-    cmake --build build --config Release --target DrMix_VST3 DrMix_AU DrMix_Standalone
+    cmake --build build --config Release --target FixDr_VST3 FixDr_AU FixDr_Standalone
 
 Copy the `.vst3` to `~/Library/Audio/Plug-Ins/VST3/` and the `.component` to `~/Library/Audio/Plug-Ins/Components/`.
 For distribution, sign and notarise the bundles (`codesign` + `notarytool`).
@@ -151,8 +151,8 @@ it's listening to cancel. The reference curve is an engineering estimate, not me
 ### Presets
 Factory: Default, Liquid Polish, Neuro Smash, Jump Up Bounce, Rollers Sub Fix, Jungle Breaks, Club Loud,
 Gentle Master Assist. User presets save as `.mcdpreset` files in
-`%APPDATA%\Mod Con DSP\Dr Mix\Presets` (Windows) or
-`~/Library/Application Support/Mod Con DSP/Dr Mix/Presets` (macOS). The star marks favourites; A/B swaps
+`%APPDATA%\Mod Con DSP\Fix Dr\Presets` (Windows) or
+`~/Library/Application Support/Mod Con DSP/Fix Dr/Presets` (macOS). The star marks favourites; A/B swaps
 two complete settings without touching the power switch or oversampling mode.
 
 ## Source layout

@@ -1,16 +1,16 @@
 ; ---------------------------------------------------------------------------
-;  Dr Mix - Windows installer (Inno Setup 6)
-;  Build with build_installer.bat (or: ISCC.exe installer\DrMix.iss)
+;  Fix Dr - Windows installer (Inno Setup 6)
+;  Build with build_installer.bat (or: ISCC.exe installer\FixDr.iss)
 ;  after build_windows.bat has produced the Release VST3 + Standalone.
 ; ---------------------------------------------------------------------------
 
-#define AppName      "Dr Mix"
+#define AppName      "Fix Dr"
 #define AppVersion   "1.0.0"
 #define AppPublisher "Mod Con DSP"
-#define Art          "..\build\DrMix_artefacts\Release"
+#define Art          "..\build\FixDr_artefacts\Release"
 
 [Setup]
-AppId={{9D4F61A3-2B7C-4E58-B0A6-83C5E1F72D94}
+AppId={{4B8E1D27-C639-4F05-9A72-D50E6B3F18C4}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
@@ -23,8 +23,8 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
-OutputBaseFilename=Dr Mix Setup {#AppVersion}
-SetupIconFile=DrMix.ico
+OutputBaseFilename=Fix Dr Setup {#AppVersion}
+SetupIconFile=FixDr.ico
 UninstallDisplayIcon={app}\{#AppName}.exe
 UninstallDisplayName={#AppName} {#AppVersion}
 WizardStyle=modern

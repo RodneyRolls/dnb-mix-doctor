@@ -1,4 +1,4 @@
-name: Build Dr Mix
+name: Build Fix Dr
 
 on:
   push:
@@ -14,11 +14,11 @@ jobs:
           - os: windows-latest
             name: Windows
             configure: cmake -B build -A x64
-            targets: DrMix_VST3 DrMix_Standalone
+            targets: FixDr_VST3 FixDr_Standalone
           - os: macos-latest
             name: macOS
             configure: cmake -B build -G Xcode
-            targets: DrMix_VST3 DrMix_AU DrMix_Standalone
+            targets: FixDr_VST3 FixDr_AU FixDr_Standalone
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -39,9 +39,9 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: Dr-Mix-${{ matrix.name }}
+          name: Fix-Dr-${{ matrix.name }}
           path: |
-            build/DrMix_artefacts/Release/VST3
-            build/DrMix_artefacts/Release/AU
-            build/DrMix_artefacts/Release/Standalone
+            build/FixDr_artefacts/Release/VST3
+            build/FixDr_artefacts/Release/AU
+            build/FixDr_artefacts/Release/Standalone
           if-no-files-found: error
