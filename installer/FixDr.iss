@@ -28,7 +28,7 @@ SetupIconFile=FixDr.ico
 UninstallDisplayIcon={app}\{#AppName}.exe
 UninstallDisplayName={#AppName} {#AppVersion}
 WizardStyle=modern
-Compression=lzma2/max
+Compression=zip/9
 SolidCompression=yes
 CloseApplications=yes
 
