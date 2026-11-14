@@ -1,6 +1,7 @@
 @echo off
 REM ---------------------------------------------------------------------------
-REM  Builds the Windows installer:  dist\Fix Dr Setup 1.0.0.exe
+REM  Builds the Windows installers:  dist\Fix Dr Setup 1.0.0.exe (VST3 + app)
+REM                                 dist\Fix Dr VST3 Setup 1.0.0.exe (VST3 only)
 REM  Runs build_windows.bat first, then Inno Setup 6
 REM  (install it with:  winget install JRSoftware.InnoSetup).
 REM ---------------------------------------------------------------------------
@@ -19,8 +20,11 @@ if not defined ISCC (
 )
 
 "%ISCC%" /Q "installer\FixDr.iss" || goto :fail
+"%ISCC%" /Q "installer\FixDrVST3.iss" || goto :fail
 echo.
-echo  Installer ready:  dist\Fix Dr Setup 1.0.0.exe
+echo  Installers ready:
+echo    dist\Fix Dr Setup 1.0.0.exe       ^<-- VST3 + standalone app
+echo    dist\Fix Dr VST3 Setup 1.0.0.exe  ^<-- VST3 plugin only
 exit /b 0
 
 :fail

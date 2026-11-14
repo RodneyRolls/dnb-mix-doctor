@@ -57,9 +57,13 @@ Copy `build\FixDr_artefacts\Release\VST3\Fix Dr.vst3` to `C:\Program Files\Commo
 
     build_installer.bat
 
-This builds the plugin, then writes `dist\Fix Dr Setup 1.0.0.exe` from `installer\FixDr.iss`.
-The installer puts the VST3 in `C:\Program Files\Common Files\VST3\`, and can optionally install the standalone app
-with Start-menu and desktop shortcuts. It appears in *Settings > Apps*, where it can be uninstalled cleanly.
+This builds the plugin, then writes two installers to `dist`:
+- `Fix Dr Setup 1.0.0.exe` (from `installer\FixDr.iss`): the VST3 plugin, plus optionally the standalone app with
+  Start-menu and desktop shortcuts.
+- `Fix Dr VST3 Setup 1.0.0.exe` (from `installer\FixDrVST3.iss`): the VST3 plugin only, nothing else.
+
+Both put the VST3 in `C:\Program Files\Common Files\VST3\`. Each appears in *Settings > Apps*, where it can be
+uninstalled cleanly.
 The installer is unsigned, so Windows SmartScreen may warn on first run ("More info > Run anyway").
 
 **macOS** (Xcode 14+; builds a universal arm64 + x86_64 binary):
