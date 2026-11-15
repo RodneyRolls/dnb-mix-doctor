@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "dsp/MixEngine.h"
+#include "AdvancedParams.h"
 
 /** Parameter IDs, ranges and the layout used by the AudioProcessorValueTreeState. */
 namespace params
@@ -42,13 +43,17 @@ namespace params
     }
     inline const juce::String eqMix { "eqMix" };
     inline const juce::String eqOn  { "eqOn" };
+    inline juce::String eqDyn (int i) { return "eqDyn" + juce::String (i + 1); }   // band i NORMAL (false) / DYNAMIC (true)
+    inline juce::String eqThr (int i) { return "eqThr" + juce::String (i + 1); }   // band i dynamic threshold, dB
+    inline const juce::String eqDynAttack  { "eqDynAttack" };
+    inline const juce::String eqDynRelease { "eqDynRelease" };
+    inline constexpr float eqThrDefault = -30.0f;
     inline constexpr float eqRangeDb = 12.0f;
 
     // ---- switches
     inline const juce::String releaseAuto { "releaseAuto" };
     inline const juce::String bypass      { "bypass" };
     inline const juce::String oversample  { "oversample" };
-    inline const juce::String multiband   { "maxMultiband" };
 
     /** The 22 knobs in on-screen order (row 1 then row 2). */
     inline const juce::StringArray knobOrder {
@@ -111,9 +116,17 @@ namespace params
             addFloat (eqBand (i), "EQ " + eqFreqLabel (i), { -eqRangeDb, eqRangeDb, 0.01f }, 0.0f, "dB", dB);
         amount   (eqMix, "EQ Mix", 100.0f);
         p.push_back (std::make_unique<AudioParameterBool> (ParameterID { eqOn, version }, "EQ On", true));
+        for (int i = 0; i < numEqBands; ++i)
+        {
+            p.push_back (std::make_unique<AudioParameterBool> (ParameterID { eqDyn (i), version }, "EQ " + eqFreqLabel (i) + " Dynamic", false));
+            addFloat (eqThr (i), "EQ " + eqFreqLabel (i) + " Threshold", { -60.0f, 0.0f, 0.1f }, eqThrDefault, "dB", dB);
+        }
+        addFloat (eqDynAttack,  "EQ Dyn Attack",  skewed (0.5f, 200.0f, 10.0f), 10.0f, "ms", ms);
+        addFloat (eqDynRelease, "EQ Dyn Release", skewed (5.0f, 2000.0f, 150.0f), 150.0f, "ms", ms);
+
+        advparams::addToLayout (p, version);
 
         p.push_back (std::make_unique<AudioParameterBool> (ParameterID { releaseAuto, version }, "Release Auto", true));
-        p.push_back (std::make_unique<AudioParameterBool> (ParameterID { multiband, version }, "Multiband Maximizer", false));
         p.push_back (std::make_unique<AudioParameterBool> (ParameterID { bypass, version }, "Bypass", false));
         p.push_back (std::make_unique<AudioParameterBool> (ParameterID { oversample, version }, "4x Oversampling", true,
                          AudioParameterBoolAttributes().withAutomatable (false)));

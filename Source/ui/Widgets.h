@@ -5,7 +5,7 @@
 namespace mcui
 {
     //==============================================================================
-    /** Rotary knob: vertical drag, shift-drag for fine control, wheel and double-click reset.
+    /** Rotary knob: vertical drag, shift-drag for fine control, wheel, Alt + click (or double-click) reset.
         The current value is drawn inside the knob by the LookAndFeel. */
     class Knob : public juce::Slider
     {
@@ -17,6 +17,14 @@ namespace mcui
         }
 
         void setBipolar (bool b) { getProperties().set ("bipolar", b); repaint(); }
+
+        /** When set, double-click calls this (e.g. open the ADVANCED page) instead of resetting; Alt + click still resets. */
+        std::function<void()> onDoubleClick;
+        void mouseDoubleClick (const juce::MouseEvent& e) override
+        {
+            if (onDoubleClick) onDoubleClick();
+            else juce::Slider::mouseDoubleClick (e);
+        }
 
         void mouseDown (const juce::MouseEvent& e) override
         {

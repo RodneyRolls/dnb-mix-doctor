@@ -6,6 +6,7 @@
 #include "dsp/MixEngine.h"
 #include "analysis/VisualFifo.h"
 #include "analysis/AutoFix.h"
+#include "analysis/LearnAnalyzer.h"
 
 class DnBMixDoctorProcessor : public juce::AudioProcessor
 {
@@ -47,12 +48,18 @@ public:
     mcdsp::SpscFifo<float, 32768> spectrumInFifo, spectrumOutFifo;
     mcdsp::SpscFifo<mcdsp::StereoFrame, 16384> stereoFifo;
     mcdsp::AutoFixAnalyser autoFix;
+    mcdsp::LearnAnalyzer learn;   // LEARN on the ADVANCED pages and the EQ (listens to the raw input)
+    int eqLearnGenre = 0;         // genre picked for EQ LEARN (UI state)
+
+    /** Sets a parameter to a real (unnormalised) value from the message thread, as one undoable host gesture. */
+    void setParamValue (const juce::String& id, float value);
 
     struct Meters
     {
         std::atomic<float> lufsIntegrated { -100 }, lufsShortTerm { -100 }, lufsMomentary { -100 };
         std::atomic<float> truePeakDb { -100 }, glueGrDb { 0 }, limiterGrDb { 0 }, autoGainDb { 0 }, clipDb { 0 }, cpuPercent { 0 };
         std::atomic<bool> resetRequested { false };
+        std::array<std::atomic<float>, params::numEqBands> eqLiveDb {};   // gain each EQ band is applying right now
     } meters;
 
     std::atomic<bool> editorOpen { false };
@@ -65,6 +72,7 @@ public:
 
     int editorWidth = 1300, editorHeight = 700;
     bool advancedOpen = false;   // ADVANCED (EQ) panel showing (kept while the editor is closed and reopened)
+    int functionPage = -1;       // per-knob ADVANCED page showing (-1 = none), kept across editor reopen
 
 private:
     void runEngine (juce::AudioBuffer<float>&, bool forceBypass);
@@ -87,8 +95,10 @@ private:
         float get() const noexcept { return v->load (std::memory_order_relaxed); }
     };
     P pInput, pSubMono, pSubTight, pKickBass, pPunch, pSnap, pMud, pReese, pHarsh, pAir, pGlue, pAttack, pRelease,
-      pWidth, pSaturate, pClipper, pAutoGainMix, pLoudness, pCeiling, pFix, pMix, pOutput, pReleaseAuto, pBypass, pOversample, pMultiband,
-      pEqMix, pEqOn;
+      pWidth, pSaturate, pClipper, pAutoGainMix, pLoudness, pCeiling, pFix, pMix, pOutput, pReleaseAuto, pBypass, pOversample,
+      pEqMix, pEqOn, pEqDynAtt, pEqDynRel;
+    std::array<P, params::numEqBands> pEqDyn, pEqThr;
+    std::vector<P> pAdv;   // ADVANCED page parameters, same order as advparams::defs()
     std::array<P, params::numEqBands> pEq;
 
     juce::ValueTree abOther;

@@ -6,6 +6,7 @@
 #include "ui/VUMeter.h"
 #include "ui/Visualizer.h"
 #include "ui/EqPanel.h"
+#include "ui/FunctionPanel.h"
 
 /** 1300 x 700 design-size editor. Everything lives in `panel`, which is scaled with an affine transform
     so the window can be resized with a locked aspect ratio while staying pixel-sharp. */
@@ -58,7 +59,6 @@ private:
                      folderButton { "Preset browser", Icon::folder, false },
                      abButton { "A/B", Icon::none, true },
                      releaseAutoButton { "Auto release", Icon::none, true },
-                     multibandButton { "Multiband maximizer", Icon::none, true },
                      advancedButton { "Advanced", Icon::none, true };
     juce::ComboBox presetBox;
     mcui::Readout cpuDisplay { {}, "% CPU" };
@@ -68,14 +68,17 @@ private:
     mcui::Readout lufsIntDisplay { "Integrated", "LUFS" }, lufsShortDisplay { "Short-term", "LUFS" },
                   truePeakDisplay { "True peak", "dBTP" }, grDisplay { "Gain reduction", "dB" };
 
-    mcui::EqPanel eqPanel { proc.apvts, [this] { return proc.currentSampleRate.load(); } };
+    mcui::EqPanel eqPanel { proc.apvts, [this] { return proc.currentSampleRate.load(); }, proc.learn,
+                            [this] (const juce::String& id, float v) { proc.setParamValue (id, v); }, proc.eqLearnGenre,
+                            [this] (int b) { return proc.meters.eqLiveDb[(size_t) b].load(); } };
     void setAdvancedOpen (bool);
+    mcui::FunctionPanel functionPanel { proc.apvts, proc.learn, [this] (const juce::String& id, float v) { proc.setParamValue (id, v); } };
+    void showFunctionPage (int pageIndex);   // -1 closes it
 
     std::array<mcui::Knob, 22> knobs;
     std::array<juce::Rectangle<int>, 22> knobCells;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> sliderAttachments;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> releaseAutoAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> multibandAttachment;
 
     struct Sweep { juce::RangedAudioParameter* param; float from, to; double delay; };
     std::vector<Sweep> sweeps;

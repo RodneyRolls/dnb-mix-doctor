@@ -238,6 +238,79 @@ int main (int argc, char** argv)
         shoot (mcui::Visualizer::View::wave, "ui_advanced.png");
     }
 
+    auto feedSeconds = [&] (double secs)
+    {
+        for (int i = 0; i < (int) (secs * sr / block); ++i)
+        {
+            fillMix (buf, sr, pos);
+            proc.processBlock (buf, midi);
+            if (i % 4 == 0) { t += 4.0 / 93.75; vis->advanceFrame (t); }
+        }
+    };
+    auto setP = [&] (const String& id, float v) { proc.setParamValue (id, v); };
+    auto findT = [&] (auto* tag) -> decltype (tag)
+    {
+        using T = std::remove_pointer_t<decltype (tag)>;
+        T* found = nullptr;
+        std::function<void (Component&)> walk = [&] (Component& c)
+        {
+            for (auto* child : c.getChildren())
+            {
+                if (auto* x = dynamic_cast<T*> (child)) found = x;
+                walk (*child);
+            }
+        };
+        walk (*editor);
+        return found;
+    };
+
+    // EQ LEARN towards Drum & Bass, then two DYNAMIC bands (sub boost that only kicks in on loud lows, harsh cut)
+    if (auto* eq = findT ((mcui::EqPanel*) nullptr))
+    {
+        proc.eqLearnGenre = 0;
+        proc.learn.start (mcui::EqPanel::learnRequester);
+        feedSeconds (9.0);
+        eq->pollNow();
+        setP (params::eqDyn (2), 1.0f);  setP (params::eqBand (2), 5.0f);  setP (params::eqThr (2), -40.0f);
+        setP (params::eqDyn (12), 1.0f); setP (params::eqBand (12), -6.0f); setP (params::eqThr (12), -45.0f);
+        feedSeconds (0.5);
+        eq->pollNow();
+        std::printf ("EQ after LEARN (Drum & Bass):");
+        for (int b = 0; b < params::numEqBands; ++b) std::printf (" %+.1f", proc.apvts.getRawParameterValue (params::eqBand (b))->load());
+        std::printf ("\n  live dB of dynamic bands: 63 Hz %+.2f, 6.3k %+.2f\n", proc.meters.eqLiveDb[2].load(), proc.meters.eqLiveDb[12].load());
+        shoot (mcui::Visualizer::View::wave, "ui_eq_learn.png");
+    }
+
+    // a knob's ADVANCED page: double-click MUD, LEARN, then the GLUE page
+    auto openPage = [&] (const String& knobTitle) -> mcui::FunctionPanel*
+    {
+        std::function<mcui::Knob* (Component&)> findKnob = [&] (Component& c) -> mcui::Knob*
+        {
+            for (auto* child : c.getChildren())
+            {
+                if (auto* k = dynamic_cast<mcui::Knob*> (child); k != nullptr && k->getTitle() == knobTitle && k->onDoubleClick) return k;
+                if (auto* k = findKnob (*child)) return k;
+            }
+            return nullptr;
+        };
+        if (auto* k = findKnob (*editor)) k->onDoubleClick();
+        return findT ((mcui::FunctionPanel*) nullptr);
+    };
+    for (auto [title, file] : { std::pair<const char*, const char*> { "MUD", "ui_page_mud.png" }, { "GLUE", "ui_page_glue.png" },
+                                { "KICK/BASS", "ui_page_kickbass.png" } })
+    {
+        auto* page = openPage (title);
+        if (page == nullptr || page->getPage() < 0) { std::printf ("page %s did not open\n", title); return 1; }
+        proc.learn.start (page->getPage());
+        feedSeconds (9.0);
+        page->pollNow();
+        std::printf ("%s page learned:", title);
+        for (auto* id : advparams::pages()[(size_t) page->getPage()].advIds)
+            std::printf (" %s=%s", id, proc.apvts.getParameter (id)->getCurrentValueAsText().toRawUTF8());
+        std::printf ("\n");
+        shoot (mcui::Visualizer::View::wave, file);
+    }
+
     // close and reopen the editor, as a host does (the ADVANCED panel stays open)
     proc.editorBeingDeleted (editor.get());
     editor = nullptr;

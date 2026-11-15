@@ -7,7 +7,7 @@ namespace
 {
     // ---- design-space layout (1300 x 700)
     const Rectangle<int> headerArea { 24, 6, 1252, 46 };
-    const Rectangle<int> visArea { 236, 100, 828, 272 };
+    const Rectangle<int> visArea { 416, 100, 844, 272 };
     const Rectangle<int> sectionArea[2] = { { 24, 378, 1252, 148 }, { 24, 530, 1252, 148 } };
     constexpr int numKnobs = 22, knobsX = 40, knobsW = 1220, rowY[2] = { 384, 536 }, rowH = 140, knobSize = 104;
     constexpr int favouriteIdOffset = 1000;
@@ -28,7 +28,7 @@ DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
     addAndMakeVisible (panel);
 
     for (auto* b : { &powerButton, &autoFixButton, &prevButton, &nextButton, &starButton, &menuButton,
-                     &folderButton, &abButton, &releaseAutoButton, &multibandButton, &advancedButton })
+                     &folderButton, &abButton, &releaseAutoButton, &advancedButton })
         panel.addAndMakeVisible (b);
     for (auto* c : std::initializer_list<Component*> { &presetBox, &cpuDisplay, &visualizer, &vuLeft, &vuRight,
                                                         &lufsIntDisplay, &lufsShortDisplay, &truePeakDisplay, &grDisplay })
@@ -37,9 +37,6 @@ DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
     abButton.setText ("A");
     releaseAutoButton.setText ("AUTO");
     releaseAutoButton.setClickingTogglesState (true);
-    multibandButton.setText ("MULTIBAND");
-    multibandButton.setClickingTogglesState (true);
-    multibandButton.setTooltip ("Maximizer mode: off = CLASSIC broadband limiter, on = MULTIBAND smart-release limiter");
     advancedButton.setText ("ADVANCED");
 
     // ---- knobs
@@ -50,17 +47,20 @@ DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
         panel.addAndMakeVisible (k);
         sliderAttachments.push_back (std::make_unique<AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, id, k));
         if (auto* param = proc.apvts.getParameter (id))
-            k.setDoubleClickReturnValue (true, (double) param->convertFrom0to1 (param->getDefaultValue()));
+            k.setDoubleClickReturnValue (true, (double) param->convertFrom0to1 (param->getDefaultValue()), ModifierKeys::altModifier);
+        if (const int page = advparams::pageIndexForKnob (id); page >= 0)
+            k.onDoubleClick = [this, page] { showFunctionPage (page); };
         k.setTitle (params::knobLabels[i]);
         k.setBipolar (id == params::input || id == params::output || id == params::width);
     }
     releaseAutoAttachment = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, params::releaseAuto, releaseAutoButton);
-    multibandAttachment = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, params::multiband, multibandButton);
 
     // ---- ADVANCED: the 16-band EQ panel slides over the knob section
     panel.addChildComponent (eqPanel);
     advancedButton.onClick = [this] { setAdvancedOpen (! proc.advancedOpen); };
     eqPanel.onClose = [this] { setAdvancedOpen (false); };
+    panel.addChildComponent (functionPanel);
+    functionPanel.onClose = [this] { showFunctionPage (-1); };
 
     // ---- top bar
     powerButton.onClick = [this]
@@ -105,6 +105,7 @@ DnBMixDoctorEditor::DnBMixDoctorEditor (DnBMixDoctorProcessor& p)
     layout();
     refreshPresetBox();
     setAdvancedOpen (proc.advancedOpen);
+    if (! proc.advancedOpen && proc.functionPage >= 0) showFunctionPage (proc.functionPage);
     vuLeft.referenceDbfs = vuRight.referenceDbfs = proc.apvts.getRawParameterValue (params::loudness)->load();
 
     // resizing: aspect ratio locked, whole panel scaled
@@ -152,12 +153,13 @@ void DnBMixDoctorEditor::layout()
 
     // display + meters
     visualizer.setBounds (visArea);
-    vuLeft.setBounds (40, 100, 188, 142);
-    vuRight.setBounds (1072, 100, 188, 142);
-    lufsIntDisplay.setBounds (40, 248, 188, 60);
-    lufsShortDisplay.setBounds (40, 312, 188, 60);
-    truePeakDisplay.setBounds (1072, 248, 188, 60);
-    grDisplay.setBounds (1072, 312, 188, 60);
+    // VU meters side by side on the left, the four readouts under them, the display takes the rest
+    vuLeft.setBounds (40, 100, 178, 142);
+    vuRight.setBounds (226, 100, 178, 142);
+    lufsIntDisplay.setBounds (40, 248, 178, 60);
+    lufsShortDisplay.setBounds (226, 248, 178, 60);
+    truePeakDisplay.setBounds (40, 312, 178, 60);
+    grDisplay.setBounds (226, 312, 178, 60);
 
     // 22 knobs: two rows of 11
     const int cellW = knobsW / 11, x0 = knobsX + (knobsW - cellW * 11) / 2;
@@ -171,19 +173,18 @@ void DnBMixDoctorEditor::layout()
     }
     const auto relCell = knobCells[(size_t) params::knobOrder.indexOf (params::release)];
     releaseAutoButton.setBounds (relCell.getCentreX() - 26, relCell.getBottom() - 21, 52, 19);
-    const auto loudCell = knobCells[(size_t) params::knobOrder.indexOf (params::loudness)];
-    multibandButton.setBounds (loudCell.getCentreX() - 44, loudCell.getBottom() - 21, 88, 19);
     eqPanel.setBounds (sectionArea[0].getUnion (sectionArea[1]));
+    functionPanel.setBounds (sectionArea[0].getUnion (sectionArea[1]));
 }
 
 void DnBMixDoctorEditor::setAdvancedOpen (bool open)
 {
+    if (open && proc.functionPage >= 0) { proc.functionPage = -1; functionPanel.setVisible (false); functionPanel.setPage (-1); }
     proc.advancedOpen = open;
     eqPanel.setVisible (open);
     if (open) eqPanel.toFront (false);
     for (auto& k : knobs) k.setVisible (! open);
     releaseAutoButton.setVisible (! open);
-    multibandButton.setVisible (! open);
     advancedButton.setToggleState (open, dontSendNotification);
 }
 
@@ -245,6 +246,8 @@ void DnBMixDoctorEditor::Panel::renderBackground (float scale)
         g.drawText (maker, badge.withTrimmedLeft (16.0f), Justification::centredLeft, false);
     }
     mcui::drawCaption (g, "v1.0", { 1180.0f, 683.0f, 64.0f, 14.0f }, Justification::centredRight, col::textFaint, 9.5f);
+    mcui::drawCaption (g, "Double-click a knob for its ADVANCED page  -  Alt + click resets a knob", { 300.0f, 683.0f, 700.0f, 14.0f },
+                       Justification::centred, col::textFaint, 9.0f);
 }
 
 void DnBMixDoctorEditor::Panel::paint (Graphics& g)
@@ -479,4 +482,17 @@ void DnBMixDoctorEditor::updateSweep()
         for (auto& s : sweeps) s.param->endChangeGesture();
         sweeps.clear();
     }
+}
+
+void DnBMixDoctorEditor::showFunctionPage (int pageIndex)
+{
+    // one overlay at a time: a knob's ADVANCED page replaces the EQ panel and vice versa
+    if (pageIndex >= 0 && proc.advancedOpen) setAdvancedOpen (false);
+    proc.functionPage = pageIndex;
+    functionPanel.setPage (pageIndex);
+    const bool open = pageIndex >= 0;
+    functionPanel.setVisible (open);
+    if (open) functionPanel.toFront (false);
+    for (auto& k : knobs) k.setVisible (! open);
+    releaseAutoButton.setVisible (! open);
 }

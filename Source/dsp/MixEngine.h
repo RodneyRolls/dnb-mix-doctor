@@ -2,7 +2,6 @@
 #include <juce_dsp/juce_dsp.h>
 #include "DspUtils.h"
 #include "TruePeakLimiter.h"
-#include "MultibandMaximizer.h"
 #include "LoudnessMeter.h"
 
 namespace mcdsp
@@ -19,12 +18,34 @@ namespace mcdsp
               mud = 0.25f, reese = 0.2f, harsh = 0.25f, air = 0.2f, glue = 0.25f, attackMs = 10, releaseMs = 150,
               width = 1.0f, saturate = 0.15f, clipper = 0.3f, autoGainMix = 1.0f, loudnessLufs = -7, ceilingDb = -1, fix = 1.0f, mix = 1.0f, outputDb = 0;
         bool releaseAuto = true, bypass = false, oversample = true;
-        bool multiband = false;   // maximiser MODE: false = CLASSIC broadband, true = MULTIBAND smart release
         // ADVANCED: 16-band graphic EQ (dB per band), EQ MIX scales every band (0..1), EQ ON
         static constexpr int numEqBands = 16;
         std::array<float, numEqBands> eqDb {};
         float eqMix = 1.0f;
         bool eqOn = true;
+        // dynamic EQ: a DYNAMIC band only applies its gain while that band is louder than its THRESHOLD
+        std::array<bool, numEqBands> eqDyn {};
+        std::array<float, numEqBands> eqThrDb { -30, -30, -30, -30, -30, -30, -30, -30, -30, -30, -30, -30, -30, -30, -30, -30 };
+        float eqDynAttackMs = 10.0f, eqDynReleaseMs = 150.0f;
+
+        /** Per-function ADVANCED settings (double-click a knob). The defaults are the values the engine
+            always used internally, so an untouched advanced page sounds exactly like before. */
+        struct Advanced
+        {
+            float monoAmount = 1.0f;                                                   // SUB MONO: how much low side is removed
+            float tightThrDb = -18.0f, tightMaxDb = 12.0f, tightReleaseMs = 300.0f;    // SUB TIGHT
+            float kbSplitHz = 120.0f, kbDuckDb = 9.0f, kbDecayMs = 60.0f, kbBodyHz = 220.0f;   // KICK/BASS
+            float punchWindowMs = 15.0f, punchReleaseMs = 40.0f, punchMaxDb = 10.0f;   // PUNCH
+            float snapHz = 900.0f, snapQ = 0.5f, snapMaxDb = 9.0f;                     // SNAP
+            float mudHz = 320.0f, mudQ = 0.9f, mudMaxDb = 9.0f;                        // MUD
+            float reeseLowHz = 350.0f, reeseHighHz = 2800.0f, reeseQ = 2.0f, reeseMaxDb = 8.0f;   // REESE TAME
+            float harshHz1 = 3200.0f, harshHz2 = 6000.0f, harshMaxDb = 9.0f;           // HARSH
+            float airHz = 10000.0f, airMaxDb = 6.0f, airExcite = 0.5f;                 // AIR
+            float widthGuard = 0.0f;                                                   // WIDTH: mono-safety guard 0..1
+            float glueThrOffsetDb = 0.0f, glueRatioMul = 1.0f, glueKneeDb = 6.0f;      // GLUE
+            float satWarmth = 0.5f;                                                    // SATURATE: even-harmonic share 0..1
+            float clipSoftness = 0.6f;                                                 // CLIPPER: knee start as share of threshold
+        } adv;
     };
 
     /** The complete DnB Mix Doctor signal chain:
@@ -65,10 +86,11 @@ namespace mcdsp
         void graphicEq (float* const* io, int numCh, int n, const EngineParams& p) noexcept;
         void processSubBlock (float* const* io, int numCh, int n, const EngineParams& p) noexcept;
         void outputStage (float* const* io, int numCh, int n, const EngineParams& p) noexcept;
-        void saturate (float* const* d, int numCh, int n, float amount) noexcept;
+        void saturate (float* const* d, int numCh, int n, float amount, float warmth) noexcept;
+        void updateAdvanced (const EngineParams::Advanced& a) noexcept;
         void updateAutoGain (const EngineParams& p, int n) noexcept;
         static float clipThresholdDb (const EngineParams& p) noexcept;
-        static float softClip (float* const* d, int numCh, int n, float threshold) noexcept;
+        static float softClip (float* const* d, int numCh, int n, float threshold, float softness = 0.6f) noexcept;
         void configureOutputModes();
 
         double sr = 48000.0;
@@ -124,15 +146,31 @@ namespace mcdsp
         // ---- GLUE
         float glueEnvDb = 0, glueAvgGr = 0;
 
+        // ---- ADVANCED settings currently applied (smoothed frequencies, cached times)
+        EngineParams::Advanced advCur;            // values the filters/envelopes are configured for
+        Smooth sKbSplit, sKbBody, sSnapHz, sMudHz, sReeseLo, sReeseHi, sHarsh1, sHarsh2, sAirHz;
+        float widthCorr = 1.0f, widthGuardCur = 1.0f;   // WIDTH guard: running correlation of the highs
+        float lowSplitHz = 120.0f, snapHzSet = 900.0f, snapQSet = 0.5f;
+        bool advInit = false;
+        void retuneBell (DynBell& b, float freq, float q) noexcept;
+
         // ---- ADVANCED 16-band graphic EQ
         std::array<Svf, EngineParams::numEqBands> eqBands;
         std::array<float, EngineParams::numEqBands> eqCurDb {};
         bool eqActive = false;
+        std::array<Svf, EngineParams::numEqBands> eqDet;      // band level detectors for DYNAMIC bands
+        std::array<float, EngineParams::numEqBands> eqEnv {}; // band power envelopes
+        std::array<float, EngineParams::numEqBands> eqPrevDb {};
+        std::array<bool, EngineParams::numEqBands> eqIdle {};
+        float eqAttCoef = 0.99f, eqRelCoef = 0.999f, eqAttMsSet = -1.0f, eqRelMsSet = -1.0f, eqFastCoef = 0.5f;
+    public:
+        /** Live gain of each EQ band in dB (dynamic bands move with the music), for the UI. */
+        std::array<float, EngineParams::numEqBands> eqLiveDb {};
+    private:
 
         // ---- output stage
         std::unique_ptr<juce::dsp::Oversampling<float>> oversampler;
         TruePeakLimiter limiterBase, limiterOs, limiterOsCatch;
-        MultibandMaximizer mbBase, mbOs;
         DcBlocker dcBase, dcOs;
         LoudnessMeter preLoud, postLoud;
         float autoGainCur = 0, refLufs = -100.0f, lossDb = 0, quietTime = 0, prevAgMix = 1.0f;

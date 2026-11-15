@@ -14,11 +14,24 @@ VU-meter app icon (`Resources/icon.png`, drawn by `DnBMixDoctorSnapshot --icon <
 ## Highlights
 - **Modern UI** with dark graphite cards, a cyan → violet accent and values shown inside the knobs. The wordmark
   and the two analogue VU meters use the original V1 design. The VU faces are lit white and glow red as the
-  level climbs past 0 VU (0 VU = the LOUDNESS target).
-- **ADVANCED panel (16-band EQ):** the ADVANCED button in the header swaps the knob section for a 16-band graphic
-  EQ (25 Hz to 18 kHz, ±12 dB per band) with a live response curve. EQ MIX scales the whole curve (0 % = flat,
-  100 % = as drawn), EQ ON switches it in and out, FLAT resets every band. The EQ sits after GLUE and before the
-  clipper/limiter, so auto-gain keeps the loudness on target. Loading a preset starts from a flat EQ.
+  level climbs past 0 VU (0 VU = the LOUDNESS target). The two meters sit side by side on the left with the
+  LUFS / true-peak / gain-reduction readouts under them.
+- **Per-knob ADVANCED pages with LEARN:** double-click any of the 13 processing knobs (SUB MONO, SUB TIGHT,
+  KICK/BASS, PUNCH, SNAP, MUD, REESE TAME, HARSH, AIR, WIDTH, GLUE, SATURATE, CLIPPER) to open its own page with
+  the settings that used to be fixed inside it (frequencies, widths, thresholds, ranges, times, exciter, mono
+  guard, warmth, softness, ...). **LEARN** listens to about 8 seconds of the playing track (silence is skipped)
+  and sets the page to suit it, e.g. MUD finds the low-mid build-up, KICK/BASS finds the kick pitch, decay and
+  bass body, HARSH finds the two harshest frequencies, GLUE sets its threshold from the track's peaks. A screen
+  shows the learned spectrum with the page's frequencies marked. DEFAULTS restores the page. Every default equals
+  the old fixed value, so untouched pages sound exactly as before; presets reset the pages. Alt + click resets a knob.
+- **ADVANCED panel (16-band EQ, normal + dynamic):** the ADVANCED button in the header swaps the knob section for a
+  16-band EQ (25 Hz to 18 kHz, ±12 dB per band) with a live response curve. Click a band to select it: NORMAL is a
+  fixed EQ band, DYNAMIC only applies its boost/cut while that band is louder than its THRESHOLD (none of it at
+  the threshold, all of it 6 dB above, with shared ATTACK / RELEASE); dynamic bands show the gain they are applying
+  right now. **LEARN** with a genre (Drum & Bass, House, Techno, Dubstep, Hip-Hop, Pop) listens to the track and
+  sets the bands to move it part of the way towards that genre's tonal balance (level-neutral, ±6 dB). EQ MIX
+  scales the whole curve, EQ ON switches it in and out, FLAT resets every band. The EQ sits after GLUE and before
+  the clipper/limiter, so auto-gain keeps the loudness on target. Loading a preset starts from a flat EQ.
 - **Accurate, loudness-coloured waveform:** 512 slices per second, drawn per screen pixel like a DAW: the true
   min/max peak of the audio under each pixel (lighter) with its RMS level inside (solid). Colour follows the level,
   round the colour wheel from yellow (quiet) through green, cyan, blue and magenta to red (loudest). The spectrum
@@ -28,10 +41,6 @@ VU-meter app icon (`Resources/icon.png`, drawn by `DnBMixDoctorSnapshot --icon <
   - LOUDNESS sets how loud the drops end up (−14…−3 LUFS).
   - AUTO GAIN sets how much of the automatic gain is applied: 100 % reaches the LOUDNESS target, 0 % applies none
     (the clipper and limiter work on your mix as it comes in).
-- **MULTIBAND maximizer mode** (button under LOUDNESS): instead of turning the whole mix down on every peak, a
-  4-band look-ahead stage works out which part of the spectrum caused the peak and turns down mostly that band, with
-  its own transient-aware release per band. Kicks no longer duck the hats, and bass is released slowly so it is not
-  chopped. Off = CLASSIC broadband limiter (the original sound).
 - **Stable loudness (no volume drift):** auto-gain learns the loudness of the loud sections and then holds it.
   The level does not sink as more of the track plays, does not jump in breakdowns, and does not change when you
   press play. Use *Menu → Reset meters + re-learn loudness* (or click the INTEGRATED readout) when you switch to
@@ -86,7 +95,7 @@ For distribution, sign and notarise the bundles (`codesign` + `notarytool`).
     build/DnBMixDoctorTests_artefacts/Release/DnBMixDoctorTests
 
 Checks, at 44.1/48/96/192 kHz: dry/wet latency alignment, level stability across intro → drop → breakdown → drop, AUTO GAIN at 0/50/100 %, wet impulse alignment in both oversampling modes,
-true-peak ceiling on a hot mix, loudness landing on target (including -5 and -4 LUFS with a -0.3 dBTP ceiling), sub-mono side removal, MULTIBAND mode (ceiling, hats not ducked by kicks, loudness, switching mid-stream), mono layout, and CPU use.
+true-peak ceiling on a hot mix, loudness landing on target (including -5 and -4 LUFS with a -0.3 dBTP ceiling), sub-mono side removal, mono layout, and CPU use.
 
     cmake --build build --config Release --target DnBMixDoctorSnapshot
     build/DnBMixDoctorSnapshot_artefacts/Release/DnBMixDoctorSnapshot <out-folder> [scale]
@@ -97,7 +106,7 @@ Renders the editor (WAVE / SPECTRUM / STEREO) to PNG with synthetic DnB audio fl
 
     INPUT → [LR4 @120 Hz: SUB TIGHT + KICK/BASS on the low band] → [LR4 @SUB MONO: mono lows, WIDTH above]
           → PUNCH → SNAP → MUD / REESE TAME / HARSH dynamic EQ → AIR → GLUE → ADVANCED 16-band EQ
-          → (4x oversampled when enabled: SATURATE → loudness auto-gain → soft clipper → [MULTIBAND stage] → limiter → catch limiter)
+          → (4x oversampled when enabled: SATURATE → loudness auto-gain → soft clipper → limiter → catch limiter)
           → latency-aligned MIX → OUTPUT → click-free bypass
 
 | Control | What it does |
@@ -118,7 +127,6 @@ Renders the editor (WAVE / SPECTRUM / STEREO) to PNG with synthetic DnB audio fl
 | CLIPPER | Soft clipper (tanh knee, 4x oversampled) in front of the limiter. 0 % = off; higher settings move its threshold from 6 dB over the ceiling down to 0.1 dB over it, so it takes more of the peaks off and the limiter works less. Louder and punchier, but grittier at high settings |
 | LOUDNESS | How loud the loud sections (drops) come out, −14…−3 LUFS short-term (default −7). Auto-gain learns the input loudness of the loud sections and holds it, plus a bounded make-up for what the clipper and limiter take off. It does not follow the running average, so the level stays put across the song |
 | AUTO GAIN | How much of the learned auto-gain is applied, 0–100 %. At 100 % the drops land on LOUDNESS; lower settings scale the gain down in dB (50 % = half the dB). The make-up for limiter loss only adapts at 100 % |
-| MULTIBAND | Maximizer mode. Off = CLASSIC: one broadband look-ahead limiter. On = MULTIBAND: a phase-coherent 4-band split (120 Hz / 1 kHz / 6 kHz); every overshoot is shared between the bands in proportion to how much each pushes the waveform towards the peak, each band capped at −12 dB, each with its own look-ahead gain and smart release (fast on transients, slow on sustained sound, slower for lows). The broadband true-peak limiter still runs after it, so the ceiling is guaranteed. Switching fades over 50 ms; latency is the same in both modes |
 | CEILING | True-peak ceiling −3…0 dBTP |
 | FIX AMOUNT | Macro that scales every corrective module (everything from SUB MONO to SATURATE) 0–100 % |
 | EQ (ADVANCED) | 16 bells at 25, 40, 63, 100, 160, 250, 400, 630 Hz, 1, 1.6, 2.5, 4, 6.3, 10, 14, 18 kHz (Q 1.8, ±12 dB). EQ MIX multiplies every band gain (no dry/wet phase smearing); EQ ON fades the curve out |
@@ -162,16 +170,19 @@ two complete settings without touching the power switch or oversampling mode.
 ## Source layout
 
     Source/Params.h                 parameter IDs, ranges, layout
+    Source/AdvancedParams.h         per-knob ADVANCED page parameters and page definitions
     Source/PluginProcessor.*        host glue, metering, visual FIFOs, A/B, state
     Source/PluginEditor.*           1300x700 editor (scaled, aspect-locked), 22 knobs, top bar, presets, auto-fix sweep
     Source/PresetManager.*          factory/user presets, favourites
     Source/dsp/MixEngine.*          the full signal chain
     Source/dsp/TruePeakLimiter.h    look-ahead true-peak limiter
-    Source/dsp/MultibandMaximizer.h 4-band smart-release maximizer stage (MULTIBAND mode)
     Source/dsp/LoudnessMeter.h      BS.1770 / R128 meter
     Source/dsp/DspUtils.h           SVF, envelopes, delay, DC blocker, true-peak interpolator
     Source/analysis/VisualFifo.h    lock-free FIFOs + waveform column builder
     Source/analysis/AutoFix.*       8-bar analyser and suggestion mapping
+    Source/analysis/LearnAnalyzer.h LEARN: measures the input (spectrum, transients, stereo, kick decay)
+    Source/analysis/LearnMapper.h   LEARN results -> page settings; EQ genre target curves
+    Source/ui/FunctionPanel.h       a knob's ADVANCED page (knobs, LEARN, learned spectrum)
     Source/ui/Theme.*               colours, fonts, card/glow helpers, LookAndFeel (knobs, combo, menus)
     Source/ui/Widgets.h             knob (fine drag), icon buttons with status LEDs, numeric readouts
     Source/ui/VUMeter.h             analogue VU meter (white face, glows red when hot), damped needle

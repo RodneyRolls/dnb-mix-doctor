@@ -87,9 +87,17 @@ bool PresetManager::load (int index)
     const auto& e = entries[(size_t) index];
 
     // every preset starts from a flat ADVANCED EQ (factory presets and older user presets don't store one)
-    for (int i = 0; i < params::numEqBands; ++i) setParam (apvts, params::eqBand (i), 0.0f);
+    for (int i = 0; i < params::numEqBands; ++i)
+    {
+        setParam (apvts, params::eqBand (i), 0.0f);
+        setParam (apvts, params::eqDyn (i), 0.0f);
+        setParam (apvts, params::eqThr (i), params::eqThrDefault);
+    }
+    setParam (apvts, params::eqDynAttack, 10.0f);
+    setParam (apvts, params::eqDynRelease, 150.0f);
     setParam (apvts, params::eqMix, 100.0f);
     setParam (apvts, params::eqOn, 1.0f);
+    for (auto& d : advparams::defs()) setParam (apvts, d.id, d.def);   // ADVANCED pages back to their defaults
 
     if (e.factory)
         applyFactory (e.name);

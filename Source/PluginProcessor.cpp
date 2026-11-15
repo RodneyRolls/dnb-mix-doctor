@@ -18,9 +18,11 @@ DnBMixDoctorProcessor::DnBMixDoctorProcessor()
     bind (pLoudness, params::loudness); bind (pCeiling, params::ceiling);   bind (pFix, params::fix);
     bind (pMix, params::mix);           bind (pOutput, params::output);     bind (pReleaseAuto, params::releaseAuto);
     bind (pBypass, params::bypass);     bind (pOversample, params::oversample);
-    bind (pMultiband, params::multiband);
     for (int i = 0; i < params::numEqBands; ++i) bind (pEq[(size_t) i], params::eqBand (i));
     bind (pEqMix, params::eqMix);       bind (pEqOn, params::eqOn);
+    for (int i = 0; i < params::numEqBands; ++i) { bind (pEqDyn[(size_t) i], params::eqDyn (i)); bind (pEqThr[(size_t) i], params::eqThr (i)); }
+    bind (pEqDynAtt, params::eqDynAttack); bind (pEqDynRel, params::eqDynRelease);
+    for (auto& d : advparams::defs()) { P q; bind (q, d.id); pAdv.push_back (q); }
 
     presets.setCurrentName ("Default");
 }
@@ -46,6 +48,7 @@ void DnBMixDoctorProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
     outTp.reset();
     columns.prepare (sampleRate);
     autoFix.prepare (sampleRate);
+    learn.prepare (sampleRate);
     load.reset (sampleRate, samplesPerBlock);
     tpHold = 0;
 }
@@ -67,9 +70,15 @@ mcdsp::EngineParams DnBMixDoctorProcessor::readParams() const noexcept
     p.fix = pFix.get() * 0.01f;          p.mix = pMix.get() * 0.01f;
     p.outputDb = pOutput.get();
     p.bypass = pBypass.get() > 0.5f;     p.oversample = pOversample.get() > 0.5f;
-    p.multiband = pMultiband.get() > 0.5f;
     for (size_t i = 0; i < p.eqDb.size(); ++i) p.eqDb[i] = pEq[i].get();
     p.eqMix = pEqMix.get() * 0.01f;      p.eqOn = pEqOn.get() > 0.5f;
+    for (size_t i = 0; i < p.eqDyn.size(); ++i) { p.eqDyn[i] = pEqDyn[i].get() > 0.5f; p.eqThrDb[i] = pEqThr[i].get(); }
+    p.eqDynAttackMs = pEqDynAtt.get();   p.eqDynReleaseMs = pEqDynRel.get();
+    for (size_t i = 0; i < pAdv.size(); ++i)
+    {
+        const auto& d = advparams::defs()[i];
+        p.adv.*(d.field) = pAdv[i].get() * d.scale;
+    }
     return p;
 }
 
@@ -93,6 +102,7 @@ void DnBMixDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     if (meters.resetRequested.exchange (false)) { outLoud.resetIntegrated(); engine.resetLoudness(); engine.relearnLoudness(); tpHold = 0; }
 
     autoFix.process (buffer.getArrayOfReadPointers(), juce::jmin (2, buffer.getNumChannels()), buffer.getNumSamples());
+    learn.process (buffer.getArrayOfReadPointers(), juce::jmin (2, buffer.getNumChannels()), buffer.getNumSamples());
 
     runEngine (buffer, false);
     meters.cpuPercent.store ((float) load.getLoadAsPercentage());
@@ -161,6 +171,7 @@ void DnBMixDoctorProcessor::runEngine (juce::AudioBuffer<float>& buffer, bool fo
     meters.lufsMomentary.store (outLoud.getMomentary());
     meters.truePeakDb.store (mcdsp::gainToDb (tpHold));
     meters.glueGrDb.store (engine.glueGrDb);
+    for (size_t b = 0; b < meters.eqLiveDb.size(); ++b) meters.eqLiveDb[b].store (engine.eqLiveDb[b]);
     meters.limiterGrDb.store (engine.limiterGrDb);
     meters.clipDb.store (engine.clipDb);
     meters.autoGainDb.store (engine.autoGainDb);
@@ -222,3 +233,13 @@ void DnBMixDoctorProcessor::setStateInformation (const void* data, int size)
 juce::AudioProcessorEditor* DnBMixDoctorProcessor::createEditor() { return new DnBMixDoctorEditor (*this); }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new DnBMixDoctorProcessor(); }
+
+void DnBMixDoctorProcessor::setParamValue (const juce::String& id, float value)
+{
+    if (auto* p = apvts.getParameter (id))
+    {
+        p->beginChangeGesture();
+        p->setValueNotifyingHost (p->convertTo0to1 (value));
+        p->endChangeGesture();
+    }
+}

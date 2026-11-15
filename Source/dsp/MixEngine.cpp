@@ -41,6 +41,9 @@ namespace mcdsp
         paramCoef = 1.0f - onePoleCoef (0.03, sr / sub);
         dynAttCoef = 1.0f - onePoleCoef (0.004, sr / sub);
         dynRelCoef = 1.0f - onePoleCoef (0.090, sr / sub);
+        eqFastCoef = 1.0f - onePoleCoef (0.002, sr / sub);
+        for (size_t b = 0; b < eqDet.size(); ++b) eqDet[b].setup (Svf::Mode::bandpass, sr, (double) kEqFreqs[b], 1.8);
+        eqAttMsSet = eqRelMsSet = -1.0f;
 
         tightFast.setup (0.001, 0.025, sr);
         tightSlow.setup (0.001, 0.300, sr);
@@ -91,14 +94,9 @@ namespace mcdsp
         // filter re-introduces, so the 4x path honours the dBTP ceiling as strictly as the 1x path
         limiterOsCatch.prepare (sr, std::max (8, lookahead / 2), true, 0.03);
 
-        // MULTIBAND maximiser stage (3 ms look-ahead). Present in both modes so latency never changes.
-        const int mbLook = std::max (8, (int) std::lround (0.003 * sr));
-        mbBase.prepare (sr, mbLook);
-        mbOs.prepare (sr * 4.0, 4 * (mbLook - 1) + 1);   // 4(L-1) samples at 4x == L-1 at 1x
-
         const int osLatency = (int) std::lround (oversampler->getLatencyInSamples());
-        const int baseTotal = limiterBase.getLatency() + mbBase.getLatency();
-        const int osTotal = osLatency + lookahead + (mbLook - 1) + limiterOsCatch.getLatency();
+        const int baseTotal = limiterBase.getLatency();
+        const int osTotal = osLatency + lookahead + limiterOsCatch.getLatency();
         totalLatency = std::max (baseTotal, osTotal);
         padBase = totalLatency - baseTotal;
         padOs = totalLatency - osTotal;
@@ -136,14 +134,18 @@ namespace mcdsp
 
         for (auto& b : eqBands) b.reset();
         eqCurDb.fill (0.0f);
+        for (auto& d : eqDet) d.reset();
+        eqEnv.fill (0.0f); eqPrevDb.fill (0.0f); eqIdle.fill (false); eqLiveDb.fill (0.0f);
         eqActive = false;
         samplesSinceKick = 1 << 30;
         lowGainPrev = punchGainPrev = 1.0f;
         bodyDbCur = snapDbCur = 0;
         glueEnvDb = glueAvgGr = 0;
+        advInit = false;
+        widthCorr = widthGuardCur = 1.0f;
 
         if (oversampler) oversampler->reset();
-        limiterBase.reset(); limiterOs.reset(); limiterOsCatch.reset(); mbBase.reset(); mbOs.reset();
+        limiterBase.reset(); limiterOs.reset(); limiterOsCatch.reset();
         dcBase.reset(); dcOs.reset();
         firstBlock = true;
         dryDelay.reset(); padDelayBase.reset(); padDelayOs.reset();
@@ -174,7 +176,7 @@ namespace mcdsp
             sMud.v = p.mud * f; sReese.v = p.reese * f; sHarsh.v = p.harsh * f; sAir.v = p.air * f; sGlue.v = p.glue * f;
             sWidth.v = 1.0f + (p.width - 1.0f) * f; sMono.v = f; sMonoHz.v = p.subMonoHz;
             for (size_t b = 0; b < eqCurDb.size(); ++b)
-                eqCurDb[b] = p.eqOn ? std::clamp (p.eqDb[b], -12.0f, 12.0f) * std::clamp (p.eqMix, 0.0f, 1.0f) : 0.0f;
+                eqCurDb[b] = p.eqOn && ! p.eqDyn[b] ? std::clamp (p.eqDb[b], -12.0f, 12.0f) * std::clamp (p.eqMix, 0.0f, 1.0f) : 0.0f;
         }
 
         // ---- latency-aligned dry copy (pre input gain, so MIX 0 % == untouched input)
@@ -195,6 +197,7 @@ namespace mcdsp
         sMud.t = p.mud * f;          sReese.t = p.reese * f;    sHarsh.t = p.harsh * f;  sAir.t = p.air * f;
         sGlue.t = p.glue * f;        sWidth.t = 1.0f + (p.width - 1.0f) * f;            sMono.t = f;
         sMonoHz.t = p.subMonoHz;
+        updateAdvanced (p.adv);
 
         glueGrDb = 0; dynamicEqDb = 0;
         for (int start = 0; start < n; start += sub)
@@ -209,14 +212,21 @@ namespace mcdsp
     //==============================================================================
     void MixEngine::processSubBlock (float* const* io, int numCh, int n, const EngineParams& p) noexcept
     {
-        for (auto* s : { &sTight, &sKick, &sPunch, &sSnap, &sMud, &sReese, &sHarsh, &sAir, &sGlue, &sWidth, &sMono, &sMonoHz })
+        for (auto* s : { &sTight, &sKick, &sPunch, &sSnap, &sMud, &sReese, &sHarsh, &sAir, &sGlue, &sWidth, &sMono, &sMonoHz,
+                         &sKbSplit, &sKbBody, &sSnapHz, &sMudHz, &sReeseLo, &sReeseHi, &sHarsh1, &sHarsh2, &sAirHz })
             s->step (paramCoef);
+        const auto& A = advCur;
 
         const bool stereo = numCh > 1;
         auto mono = [&] (int i) { return stereo ? 0.5f * (io[0][i] + io[1][i]) : io[0][i]; };
 
         // ====== 1. LOW END: SUB TIGHT + KICK/BASS on the < 120 Hz band ===========================
         {
+            if (std::abs (sKbSplit.v - lowSplitHz) > 0.05f)
+            {
+                lowSplitHz = sKbSplit.v;
+                lowSplit.setCutoffFrequency (lowSplitHz);
+            }
             float lo[2][sub], hi[2][sub];
             for (int i = 0; i < n; ++i)
             {
@@ -238,8 +248,8 @@ namespace mcdsp
             // SUB TIGHT: pull the sustain of the sub down (fast vs slow release) + gentle compression
             const float aT = sTight.v;
             const float sustainDb = gainToDb ((tightFast.value + kTiny) / (tightSlow.value + kTiny));
-            const float tightDb = std::max (-12.0f * aT, aT * 1.2f * std::min (0.0f, sustainDb));
-            const float compDb = -std::max (0.0f, powerToDb (lowRms.value) + 18.0f) * 0.5f * aT;
+            const float tightDb = std::max (-A.tightMaxDb * aT, aT * 1.2f * std::min (0.0f, sustainDb));
+            const float compDb = -std::max (0.0f, powerToDb (lowRms.value) - A.tightThrDb) * 0.5f * aT;
 
             // KICK/BASS: after the kick's attack (first ~8 ms passes untouched) duck the low band so the
             // overlapping bass sustain doesn't smear the kick; also dip the 220 Hz bass body during the hit.
@@ -248,9 +258,9 @@ namespace mcdsp
             if (t < 0.008f)       shape = 0.0f;
             else if (t < 0.014f)  shape = (t - 0.008f) / 0.006f;
             else if (t < 0.045f)  shape = 1.0f;
-            else if (t < 0.6f)    shape = std::exp (-(t - 0.045f) / 0.06f);
+            else if (t < 0.6f)    shape = std::exp (-(t - 0.045f) / (A.kbDecayMs * 0.001f));
             const float aK = sKick.v;
-            const float duckDb = -9.0f * aK * shape;
+            const float duckDb = -A.kbDuckDb * aK * shape;
             const float bodyShape = t < 0.002f ? t / 0.002f : (t < 0.6f ? std::exp (-(t - 0.002f) / 0.08f) : 0.0f);
             const float bodyTarget = -6.0f * aK * bodyShape;
 
@@ -268,7 +278,7 @@ namespace mcdsp
             bodyDbCur += (bodyTarget - bodyDbCur) * 0.5f;
             if (aK > 0.0005f || std::abs (bodyDbCur) > 0.01f)
             {
-                bodyBell.setup (Svf::Mode::bell, sr, 220.0, 0.9, bodyDbCur);
+                bodyBell.setup (Svf::Mode::bell, sr, sKbBody.v, 0.9, bodyDbCur);
                 for (int ch = 0; ch < numCh; ++ch)
                     for (int i = 0; i < n; ++i) io[ch][i] = bodyBell.process (io[ch][i], ch);
             }
@@ -278,17 +288,31 @@ namespace mcdsp
         if (stereo)
         {
             monoSplit.setCutoffFrequency (sMonoHz.v);
-            const float sideLo = 1.0f - sMono.v;
-            const float sideHi = sWidth.v;
+            const float sideLo = 1.0f - sMono.v * std::clamp (A.monoAmount, 0.0f, 1.0f);
+            // WIDTH guard: when the highs go out of phase (correlation below +0.3), pull any extra width back
+            // towards 100 % so the mix stays mono-compatible. guard 0 = off.
+            {
+                const float target = A.widthGuard <= 0.0f || sWidth.v <= 1.0f ? 1.0f
+                                   : 1.0f - std::clamp (A.widthGuard, 0.0f, 1.0f) * clamp01 ((0.3f - widthCorr) / 0.6f);
+                widthGuardCur += (target - widthGuardCur) * paramCoef;
+            }
+            const float sideHi = 1.0f + (sWidth.v - 1.0f) * (sWidth.v > 1.0f ? widthGuardCur : 1.0f);
+            double sLR = 0, sLL = 0, sRR = 0;
             for (int i = 0; i < n; ++i)
             {
                 float lL, hL, lR, hR;
                 monoSplit.processSample (0, io[0][i], lL, hL);
                 monoSplit.processSample (1, io[1][i], lR, hR);
+                sLR += (double) hL * hR; sLL += (double) hL * hL; sRR += (double) hR * hR;
                 const float m = 0.5f * (lL + lR + hL + hR);
                 const float s = 0.5f * ((lL - lR) * sideLo + (hL - hR) * sideHi);
                 io[0][i] = m + s;
                 io[1][i] = m - s;
+            }
+            if (sLL + sRR > 1.0e-10)   // ~300 ms running correlation of the highs, ignoring silence
+            {
+                const float c = (float) (sLR / std::sqrt (sLL * sRR + 1.0e-20));
+                widthCorr += (std::clamp (c, -1.0f, 1.0f) - widthCorr) * (float) (n / (0.3 * sr));
             }
         }
 
@@ -302,13 +326,18 @@ namespace mcdsp
             }
             const float a = sPunch.v;
             const float trDb = std::clamp (gainToDb ((punchFast.value + kTiny) / (punchSlow.value + kTiny)), 0.0f, 15.0f);
-            const float gain = dbToGain (std::min (10.0f * a, a * 1.0f * trDb));
+            const float gain = dbToGain (std::min (A.punchMaxDb * a, a * 1.0f * trDb));
             applyGainRamp (io, numCh, n, punchGainPrev, gain);
             punchGainPrev = gain;
         }
 
         // ====== 4. SNAP (transient bell boost in the snare range 150 Hz - 2 kHz) =================
         {
+            if (std::abs (sSnapHz.v - snapHzSet) > 0.05f || A.snapQ != snapQSet)
+            {
+                snapHzSet = sSnapHz.v; snapQSet = A.snapQ;
+                snapDetect.setup (Svf::Mode::bandpass, sr, snapHzSet, snapQSet);
+            }
             for (int i = 0; i < n; ++i)
             {
                 const float bp = std::abs (snapDetect.process (mono (i)));
@@ -317,11 +346,11 @@ namespace mcdsp
             }
             const float a = sSnap.v;
             const float trDb = std::clamp (gainToDb ((snapFast.value + kTiny) / (snapSlow.value + kTiny)), 0.0f, 15.0f);
-            const float target = std::min (9.0f * a, a * 1.2f * trDb);
+            const float target = std::min (A.snapMaxDb * a, a * 1.2f * trDb);
             snapDbCur += (target - snapDbCur) * (target > snapDbCur ? 0.7f : 0.25f);
             if (a > 0.0005f || snapDbCur > 0.01f)
             {
-                snapBell.setup (Svf::Mode::bell, sr, 900.0, 0.5, snapDbCur);
+                snapBell.setup (Svf::Mode::bell, sr, snapHzSet, snapQSet, snapDbCur);
                 for (int ch = 0; ch < numCh; ++ch)
                     for (int i = 0; i < n; ++i) io[ch][i] = snapBell.process (io[ch][i], ch);
             }
@@ -329,6 +358,19 @@ namespace mcdsp
 
         // ====== 5. MUD / REESE TAME / HARSH : dynamic EQ =========================================
         {
+            // ADVANCED: retune the detectors and bells when their frequencies / widths move
+            retuneBell (mudBell, sMudHz.v, A.mudQ);
+            for (size_t k = 0; k < reeseBells.size(); ++k)
+            {
+                const float lo = std::min (sReeseLo.v, sReeseHi.v), hi = std::max (sReeseLo.v, sReeseHi.v);
+                // keep the original spacing (350 / 600 / 1000 / 1700 / 2800 Hz at the default range)
+                const float pos = (float) (std::log (kReeseFreqs[k] / kReeseFreqs[0]) / std::log (kReeseFreqs.back() / kReeseFreqs[0]));
+                const float f = lo * std::pow (hi / lo, pos);
+                retuneBell (reeseBells[k], f, A.reeseQ);
+            }
+            retuneBell (harshBells[0], sHarsh1.v, 1.4f);
+            retuneBell (harshBells[1], sHarsh2.v, 1.4f);
+
             auto detectBell = [] (DynBell& b, float x) { const float bp = b.detect.process (x); b.env.process (bp * bp); };
             for (int i = 0; i < n; ++i)
             {
@@ -359,7 +401,7 @@ namespace mcdsp
                 const float a = sMud.v;
                 mudBell.levelDb = powerToDb (mudBell.env.value);
                 const float excess = mudBell.levelDb - (refDb - 3.0f - 5.0f * a);
-                smoothAndSet (mudBell, signal ? dynCut (excess, a, 9.0f) : 0.0f);
+                smoothAndSet (mudBell, signal ? dynCut (excess, a, A.mudMaxDb) : 0.0f);
                 applyBell (mudBell);
             }
             // REESE TAME: resonances poking out above their spectral neighbours (300 Hz - 3 kHz)
@@ -373,7 +415,7 @@ namespace mcdsp
                     else if (k == reeseBells.size() - 1) neighbour = reeseBells[k - 1].levelDb;
                     else                                neighbour = 0.5f * (reeseBells[k - 1].levelDb + reeseBells[k + 1].levelDb);
                     const float excess = reeseBells[k].levelDb - neighbour - (4.0f - 3.0f * a);
-                    smoothAndSet (reeseBells[k], signal && reeseBells[k].levelDb > -60.0f ? dynCut (excess, a, 8.0f) : 0.0f);
+                    smoothAndSet (reeseBells[k], signal && reeseBells[k].levelDb > -60.0f ? dynCut (excess, a, A.reeseMaxDb) : 0.0f);
                     applyBell (reeseBells[k]);
                 }
             }
@@ -384,7 +426,7 @@ namespace mcdsp
                 {
                     b.levelDb = powerToDb (b.env.value);
                     const float excess = b.levelDb - (refDb - 10.0f - 6.0f * a);
-                    smoothAndSet (b, signal ? dynCut (excess, a, 9.0f) : 0.0f);
+                    smoothAndSet (b, signal ? dynCut (excess, a, A.harshMaxDb) : 0.0f);
                     applyBell (b);
                 }
             }
@@ -400,8 +442,8 @@ namespace mcdsp
             const float a = sAir.v;
             if (a > 0.0005f)
             {
-                airShelf.setup (Svf::Mode::highShelf, sr, 10000.0, 0.7, 6.0f * a);
-                const float exc = 0.5f * a;
+                airShelf.setup (Svf::Mode::highShelf, sr, sAirHz.v, 0.7, A.airMaxDb * a);
+                const float exc = A.airExcite * a;
                 for (int ch = 0; ch < numCh; ++ch)
                     for (int i = 0; i < n; ++i)
                     {
@@ -417,9 +459,9 @@ namespace mcdsp
             const float a = sGlue.v;
             if (a > 0.0005f || glueEnvDb < -0.01f)
             {
-                const float thr = -6.0f - 18.0f * a;
-                const float ratio = 1.5f + 2.5f * a;
-                const float knee = 6.0f;
+                const float thr = -6.0f - 18.0f * a + A.glueThrOffsetDb;
+                const float ratio = std::max (1.05f, (1.5f + 2.5f * a) * A.glueRatioMul);
+                const float knee = std::max (0.1f, A.glueKneeDb);
                 const float slope = 1.0f / ratio - 1.0f;
                 const float makeup = -thr * (1.0f - 1.0f / ratio) * 0.25f * a;
                 const float att = onePoleCoef (p.attackMs * 0.001, sr);
@@ -451,18 +493,124 @@ namespace mcdsp
         graphicEq (io, numCh, n, p);
     }
 
+    void MixEngine::updateAdvanced (const EngineParams::Advanced& a) noexcept
+    {
+        // Called once per host block. Frequencies glide (smoothed per sub-block); envelope times are only
+        // recomputed when they actually change. Everything is clamped so automation can never break a filter.
+        const float fMax = (float) (sr * 0.45);
+        auto hz = [fMax] (float f, float lo) { return std::clamp (f, lo, fMax); };
+        auto ms = [] (float v, float lo, float hi) { return std::clamp (v, lo, hi); };
+
+        EngineParams::Advanced c = a;
+        c.monoAmount = clamp01 (a.monoAmount);
+        c.tightThrDb = std::clamp (a.tightThrDb, -40.0f, 0.0f);
+        c.tightMaxDb = std::clamp (a.tightMaxDb, 0.0f, 24.0f);
+        c.tightReleaseMs = ms (a.tightReleaseMs, 50.0f, 1000.0f);
+        c.kbSplitHz = hz (a.kbSplitHz, 40.0f);
+        c.kbDuckDb = std::clamp (a.kbDuckDb, 0.0f, 18.0f);
+        c.kbDecayMs = ms (a.kbDecayMs, 10.0f, 300.0f);
+        c.kbBodyHz = hz (a.kbBodyHz, 60.0f);
+        c.punchWindowMs = ms (a.punchWindowMs, 2.0f, 60.0f);
+        c.punchReleaseMs = ms (a.punchReleaseMs, 10.0f, 200.0f);
+        c.punchMaxDb = std::clamp (a.punchMaxDb, 0.0f, 18.0f);
+        c.snapHz = hz (a.snapHz, 100.0f);
+        c.snapQ = std::clamp (a.snapQ, 0.2f, 4.0f);
+        c.snapMaxDb = std::clamp (a.snapMaxDb, 0.0f, 18.0f);
+        c.mudHz = hz (a.mudHz, 80.0f);
+        c.mudQ = std::clamp (a.mudQ, 0.3f, 6.0f);
+        c.mudMaxDb = std::clamp (a.mudMaxDb, 0.0f, 18.0f);
+        c.reeseLowHz = hz (a.reeseLowHz, 100.0f);
+        c.reeseHighHz = hz (a.reeseHighHz, 100.0f);
+        c.reeseQ = std::clamp (a.reeseQ, 0.5f, 8.0f);
+        c.reeseMaxDb = std::clamp (a.reeseMaxDb, 0.0f, 18.0f);
+        c.harshHz1 = hz (a.harshHz1, 1000.0f);
+        c.harshHz2 = hz (a.harshHz2, 1000.0f);
+        c.harshMaxDb = std::clamp (a.harshMaxDb, 0.0f, 18.0f);
+        c.airHz = hz (a.airHz, 2000.0f);
+        c.airMaxDb = std::clamp (a.airMaxDb, 0.0f, 12.0f);
+        c.airExcite = clamp01 (a.airExcite);
+        c.widthGuard = clamp01 (a.widthGuard);
+        c.glueThrOffsetDb = std::clamp (a.glueThrOffsetDb, -24.0f, 24.0f);
+        c.glueRatioMul = std::clamp (a.glueRatioMul, 0.25f, 4.0f);
+        c.glueKneeDb = std::clamp (a.glueKneeDb, 0.0f, 18.0f);
+
+        if (! advInit || c.tightReleaseMs != advCur.tightReleaseMs)
+            tightSlow.setup (0.001, c.tightReleaseMs * 0.001, sr);
+        if (! advInit || c.punchWindowMs != advCur.punchWindowMs || c.punchReleaseMs != advCur.punchReleaseMs)
+        {
+            punchFast.setup (0.0001, c.punchReleaseMs * 0.001, sr);
+            punchSlow.setup (c.punchWindowMs * 0.001, c.punchReleaseMs * 0.001, sr);
+        }
+
+        sKbSplit.t = c.kbSplitHz; sKbBody.t = c.kbBodyHz; sSnapHz.t = c.snapHz; sMudHz.t = c.mudHz;
+        sReeseLo.t = c.reeseLowHz; sReeseHi.t = c.reeseHighHz; sHarsh1.t = c.harshHz1; sHarsh2.t = c.harshHz2;
+        sAirHz.t = c.airHz;
+        if (! advInit)
+        {
+            for (auto* s : { &sKbSplit, &sKbBody, &sSnapHz, &sMudHz, &sReeseLo, &sReeseHi, &sHarsh1, &sHarsh2, &sAirHz })
+                s->v = s->t;
+            advInit = true;
+        }
+        advCur = c;
+    }
+
+    void MixEngine::retuneBell (DynBell& b, float freq, float q) noexcept
+    {
+        if (std::abs ((double) freq - b.freq) < 0.05 && std::abs ((double) q - b.q) < 1.0e-4) return;
+        b.freq = freq; b.q = q;
+        b.detect.setup (Svf::Mode::bandpass, sr, b.freq, b.q);
+    }
+
     void MixEngine::graphicEq (float* const* io, int numCh, int n, const EngineParams& p) noexcept
     {
         // EQ MIX scales every band's gain (0 % = flat, 100 % = as drawn), so it blends the curve in without the
         // phase smearing a parallel dry/wet blend of minimum-phase bells would cause. EQ ON fades the curve out.
+        // A DYNAMIC band applies its gain only while the band is louder than its THRESHOLD: none of it at the
+        // threshold, all of it 6 dB above (attack/release from the EQ's ATTACK and RELEASE).
         const float depth = p.eqOn ? std::clamp (p.eqMix, 0.0f, 1.0f) : 0.0f;
-        bool any = false;
-        for (size_t b = 0; b < eqCurDb.size(); ++b)
+        const int nb = (int) eqBands.size();
+
+        bool anyDyn = false;
+        for (int b = 0; b < nb; ++b)
+            if (p.eqDyn[(size_t) b] && std::abs (p.eqDb[(size_t) b]) > 0.001f && depth > 0.0f) anyDyn = true;
+            else eqEnv[(size_t) b] = 0.0f;
+        if (anyDyn)
         {
-            const float target = std::clamp (p.eqDb[b], -12.0f, 12.0f) * depth;
-            eqCurDb[b] += (target - eqCurDb[b]) * paramCoef;
-            if (std::abs (target - eqCurDb[b]) < 0.001f) eqCurDb[b] = target;
-            any = any || std::abs (eqCurDb[b]) > 0.001f;
+            const float attMs = std::clamp (p.eqDynAttackMs, 0.5f, 200.0f), relMs = std::clamp (p.eqDynReleaseMs, 5.0f, 2000.0f);
+            if (attMs != eqAttMsSet) { eqAttCoef = onePoleCoef (attMs * 0.001, sr); eqAttMsSet = attMs; }
+            if (relMs != eqRelMsSet) { eqRelCoef = onePoleCoef (relMs * 0.001, sr); eqRelMsSet = relMs; }
+            const bool stereo = numCh > 1;
+            for (int i = 0; i < n; ++i)
+            {
+                const float m = stereo ? 0.5f * (io[0][i] + io[1][i]) : io[0][i];
+                for (int b = 0; b < nb; ++b)
+                {
+                    if (! p.eqDyn[(size_t) b] || std::abs (p.eqDb[(size_t) b]) <= 0.001f) continue;
+                    const float y = eqDet[(size_t) b].process (m);
+                    const float pw = y * y;
+                    auto& e = eqEnv[(size_t) b];
+                    e = pw + (pw > e ? eqAttCoef : eqRelCoef) * (e - pw);
+                }
+            }
+        }
+
+        bool any = false;
+        for (int b = 0; b < nb; ++b)
+        {
+            float target = std::clamp (p.eqDb[(size_t) b], -12.0f, 12.0f) * depth;
+            auto& cur = eqCurDb[(size_t) b];
+            if (p.eqDyn[(size_t) b])
+            {
+                // band power of a bandpass sits ~3 dB under a sine's peak level; compare in RMS-like dB
+                const float levelDb = powerToDb (eqEnv[(size_t) b]) + 3.0f;
+                target *= clamp01 ((levelDb - p.eqThrDb[(size_t) b]) / 6.0f);
+                cur += (target - cur) * eqFastCoef;   // the envelope already sets the timing
+            }
+            else
+                cur += (target - cur) * paramCoef;
+            if (std::abs (target - cur) < 0.001f) cur = target;
+            eqLiveDb[(size_t) b] = cur;
+            any = any || std::abs (cur) > 0.001f;
         }
         if (! any)
         {
@@ -472,6 +620,14 @@ namespace mcdsp
         eqActive = true;
         for (size_t b = 0; b < eqBands.size(); ++b)
         {
+            if (std::abs (eqCurDb[b]) < 0.001f && std::abs (eqPrevDb[b]) < 0.001f)   // a 0 dB bell is exactly transparent: skip it
+            {
+                if (eqPrevDb[b] != 0.0f || ! eqIdle[b]) { eqBands[b].reset(); eqIdle[b] = true; }
+                eqPrevDb[b] = 0.0f;
+                continue;
+            }
+            eqIdle[b] = false;
+            eqPrevDb[b] = eqCurDb[b];
             auto& f = eqBands[b];
             f.setup (Svf::Mode::bell, sr, (double) kEqFreqs[b], 1.8, eqCurDb[b]);
             for (int ch = 0; ch < numCh; ++ch)
@@ -480,11 +636,11 @@ namespace mcdsp
     }
 
     //==============================================================================
-    void MixEngine::saturate (float* const* d, int numCh, int n, float s) noexcept
+    void MixEngine::saturate (float* const* d, int numCh, int n, float s, float warmth) noexcept
     {
         if (s <= 0.0005f) return;
         const float drive = 1.0f + 3.0f * std::pow (s, 1.3f);
-        const float bias = 0.1f * s;                      // asymmetry -> 2nd harmonic ("valve")
+        const float bias = 0.2f * std::clamp (warmth, 0.0f, 1.0f) * s;   // asymmetry -> 2nd harmonic ("valve"); WARMTH 50 % = original
         const float tb = std::tanh (drive * bias);
         const float norm = 1.0f / (drive * (1.0f - tb * tb));   // unity small-signal gain
         const float blend = std::min (1.0f, 3.0f * s);
@@ -506,10 +662,10 @@ namespace mcdsp
         return p.ceilingDb + head;
     }
 
-    float MixEngine::softClip (float* const* d, int numCh, int n, float threshold) noexcept
+    float MixEngine::softClip (float* const* d, int numCh, int n, float threshold, float softness) noexcept
     {
         // linear below 60 % of the threshold, then a tanh knee that approaches (never exceeds) the threshold
-        const float knee = 0.6f * threshold, range = threshold - knee;
+        const float knee = std::clamp (softness, 0.05f, 0.95f) * threshold, range = threshold - knee;
         float deepest = 0.0f;
         for (int ch = 0; ch < numCh; ++ch)
             for (int i = 0; i < n; ++i)
@@ -569,7 +725,6 @@ namespace mcdsp
                 modeFade = fadeFrom = 0.0f;
                 activeOs = p.oversample;
                 oversampler->reset(); limiterBase.reset(); limiterOs.reset(); limiterOsCatch.reset(); dcBase.reset(); dcOs.reset();
-                mbBase.reset(); mbOs.reset();
                 padDelayBase.reset(); padDelayOs.reset();
             }
         }
@@ -586,8 +741,6 @@ namespace mcdsp
         const float ceiling = dbToGain (p.ceilingDb);
         const float clipThreshold = dbToGain (clipThresholdDb (p));
         const float sat = p.saturate * p.fix;
-        mbBase.setEnabled (p.multiband);
-        mbOs.setEnabled (p.multiband);
 
         if (activeOs)
         {
@@ -595,26 +748,24 @@ namespace mcdsp
             auto up = oversampler->processSamplesUp (block);
             const int un = (int) up.getNumSamples();
             float* upPtrs[2] = { up.getChannelPointer (0), numCh > 1 ? up.getChannelPointer (1) : nullptr };
-            saturate (upPtrs, numCh, un, sat);
+            saturate (upPtrs, numCh, un, sat, p.adv.satWarmth);
             for (int ch = 0; ch < numCh; ++ch)
                 for (int i = 0; i < un; ++i) upPtrs[ch][i] = dcOs.process (ch, upPtrs[ch][i]);
             applyGainRamp (upPtrs, numCh, un, gainStart, gainEnd);
-            clipDb = softClip (upPtrs, numCh, un, clipThreshold);   // alias-free at 4x
-            const float mbGr = mbOs.process (upPtrs, numCh, un, ceiling * 0.989f);
-            limiterGrDb = std::min (mbGr, limiterOs.process (upPtrs, numCh, un, ceiling * 0.989f));   // ~0.1 dB margin for the decimator
+            clipDb = softClip (upPtrs, numCh, un, clipThreshold, p.adv.clipSoftness);   // alias-free at 4x
+            limiterGrDb = limiterOs.process (upPtrs, numCh, un, ceiling * 0.989f);   // ~0.1 dB margin for the decimator
             oversampler->processSamplesDown (block);
             limiterGrDb = std::min (limiterGrDb, limiterOsCatch.process (io, numCh, n, ceiling));
             padDelayOs.processBlock (io, numCh, n);
         }
         else
         {
-            saturate (io, numCh, n, sat);
+            saturate (io, numCh, n, sat, p.adv.satWarmth);
             for (int ch = 0; ch < numCh; ++ch)
                 for (int i = 0; i < n; ++i) io[ch][i] = dcBase.process (ch, io[ch][i]);
             applyGainRamp (io, numCh, n, gainStart, gainEnd);
-            clipDb = softClip (io, numCh, n, clipThreshold);
-            const float mbGr = mbBase.process (io, numCh, n, ceiling);
-            limiterGrDb = std::min (mbGr, limiterBase.process (io, numCh, n, ceiling));
+            clipDb = softClip (io, numCh, n, clipThreshold, p.adv.clipSoftness);
+            limiterGrDb = limiterBase.process (io, numCh, n, ceiling);
             padDelayBase.processBlock (io, numCh, n);
         }
 
