@@ -137,9 +137,181 @@ static Image renderIcon (int S)
     return img;
 }
 
+// ---- Installer icon: a modern rounded "glass" tile in the plugin's graphite, a glowing cyan -> violet arc meter
+//      with a needle, the MC6400 wordmark, and a round install badge (arrow into a tray) bottom-right.
+//      At 48 px and below the ticks are dropped; the wordmark only appears from 96 px, so small sizes stay crisp.
+static Image renderSetupIcon (int S)
+{
+    Image img (Image::ARGB, S, S, true);
+    Graphics g (img);
+    g.setImageResamplingQuality (Graphics::highResamplingQuality);
+    g.addTransform (AffineTransform::scale ((float) S / 1024.0f));
+    const bool small = S <= 48, tiny = S < 24, wordmark = S >= 96;
+    const Colour cyan (0xff35d6ff), violet (0xff8a5cff), pink (0xffff4fa3);
+
+    // tile
+    const auto tile = Rectangle<float> (40.0f, 40.0f, 944.0f, 944.0f);
+    const float radius = 212.0f;
+    {
+        g.setColour (Colours::black.withAlpha (0.35f));   // soft drop shadow
+        g.fillRoundedRectangle (tile.translated (0.0f, 14.0f), radius);
+        ColourGradient bg (Colour (0xff1c2330), tile.getX(), tile.getY(), Colour (0xff07090d), tile.getRight(), tile.getBottom(), false);
+        bg.addColour (0.55, Colour (0xff10151d));
+        g.setGradientFill (bg);
+        g.fillRoundedRectangle (tile, radius);
+
+        Graphics::ScopedSaveState ss (g);
+        Path clip; clip.addRoundedRectangle (tile, radius);
+        g.reduceClipRegion (clip);
+        // coloured light blooms
+        g.setGradientFill (ColourGradient (violet.withAlpha (0.45f), 820, 180, violet.withAlpha (0.0f), 820, 720, true));
+        g.fillRect (tile);
+        g.setGradientFill (ColourGradient (cyan.withAlpha (0.35f), 170, 860, cyan.withAlpha (0.0f), 170, 330, true));
+        g.fillRect (tile);
+        // glass sheen across the top
+        g.setGradientFill (ColourGradient (Colours::white.withAlpha (0.13f), 0, 40, Colours::white.withAlpha (0.0f), 0, 470, false));
+        g.fillRect (tile.withHeight (430.0f));
+    }
+    g.setColour (Colours::white.withAlpha (0.16f));
+    g.drawRoundedRectangle (tile.reduced (3.0f), radius - 3.0f, tiny ? 18.0f : 7.0f);
+
+    // arc meter
+    const Point<float> c (512.0f, 640.0f);
+    const float R = 330.0f, a0 = -2.15f, a1 = 2.15f;   // radians from straight up
+    auto at = [&] (float a, float r) { return Point<float> (c.x + std::sin (a) * r, c.y - std::cos (a) * r); };
+    {
+        Path track; track.addCentredArc (c.x, c.y, R, R, 0, a0, a1, true);
+        g.setColour (Colours::white.withAlpha (0.10f));
+        g.strokePath (track, PathStrokeType (small ? 90.0f : 58.0f, PathStrokeType::curved, PathStrokeType::rounded));
+
+        const float aLevel = 0.95f;   // lit up to here
+        Path lit; lit.addCentredArc (c.x, c.y, R, R, 0, a0, aLevel, true);
+        ColourGradient grad (cyan, at (a0, R).x, at (a0, R).y, pink, at (aLevel, R).x, at (aLevel, R).y, false);
+        grad.addColour (0.6, violet);
+        for (float w : { 150.0f, 110.0f })   // glow
+        {
+            g.setGradientFill (grad);
+            g.setOpacity (w > 120.0f ? 0.12f : 0.22f);
+            g.strokePath (lit, PathStrokeType (small ? w * 1.4f : w, PathStrokeType::curved, PathStrokeType::rounded));
+        }
+        g.setOpacity (1.0f);
+        g.setGradientFill (grad);
+        g.strokePath (lit, PathStrokeType (small ? 90.0f : 58.0f, PathStrokeType::curved, PathStrokeType::rounded));
+
+        if (! small)   // tick marks inside the arc
+            for (int k = 0; k <= 10; ++k)
+            {
+                const float a = jmap ((float) k / 10.0f, a0, a1);
+                g.setColour (Colours::white.withAlpha (k % 5 == 0 ? 0.55f : 0.28f));
+                g.drawLine (Line<float> (at (a, R - 62.0f), at (a, R - (k % 5 == 0 ? 112.0f : 92.0f))), k % 5 == 0 ? 10.0f : 7.0f);
+            }
+
+        // needle + hub
+        const float aNeedle = 0.62f;
+        const auto tip = at (aNeedle, R - (small ? 40.0f : 70.0f));
+        g.setColour (Colours::black.withAlpha (0.35f));
+        g.drawLine (Line<float> (c.translated (10, 14), tip.translated (10, 14)), small ? 56.0f : 26.0f);
+        g.setColour (Colours::white);
+        g.drawLine (Line<float> (c, tip), small ? 50.0f : 22.0f);
+        g.setGradientFill (ColourGradient (Colours::white, c.x, c.y - 60, Colour (0xffc9d6e6), c.x, c.y + 60, false));
+        g.fillEllipse (Rectangle<float> (small ? 170.0f : 120.0f, small ? 170.0f : 120.0f).withCentre (c));
+        g.setColour (Colour (0xff0b0e14));
+        g.fillEllipse (Rectangle<float> (small ? 60.0f : 44.0f, small ? 60.0f : 44.0f).withCentre (c));
+    }
+
+    // wordmark
+    if (wordmark)
+    {
+        g.setColour (Colours::white.withAlpha (0.92f));
+        g.setFont (mcui::font (S >= 200 ? 96.0f : 120.0f, true).withExtraKerningFactor (0.05f));
+        g.drawText ("MC6400", Rectangle<float> (150.0f, 790.0f, 520.0f, 120.0f), Justification::centred, false);
+    }
+
+    // install badge: arrow into a tray
+    {
+        const float d = small ? 470.0f : 310.0f;
+        const auto badge = Rectangle<float> (d, d).withCentre ({ 984.0f - d * 0.5f - (small ? 0.0f : 6.0f), 984.0f - d * 0.5f - (small ? 0.0f : 6.0f) });
+        g.setColour (Colours::black.withAlpha (0.45f));
+        g.fillEllipse (badge.translated (0.0f, 12.0f).expanded (6.0f));
+        ColourGradient bg (cyan, badge.getX(), badge.getY(), violet, badge.getRight(), badge.getBottom(), false);
+        g.setGradientFill (bg);
+        g.fillEllipse (badge);
+        g.setColour (Colours::white.withAlpha (0.35f));
+        g.drawEllipse (badge.reduced (6.0f), small ? 16.0f : 8.0f);
+
+        const auto bc = badge.getCentre();
+        const float u = d / 380.0f;
+        Path arrow;
+        arrow.startNewSubPath (bc.x, bc.y - 112.0f * u);
+        arrow.lineTo (bc.x, bc.y + 30.0f * u);
+        arrow.startNewSubPath (bc.x - 72.0f * u, bc.y - 40.0f * u);
+        arrow.lineTo (bc.x, bc.y + 32.0f * u);
+        arrow.lineTo (bc.x + 72.0f * u, bc.y - 40.0f * u);
+        Path tray;
+        tray.startNewSubPath (bc.x - 108.0f * u, bc.y + 40.0f * u);
+        tray.lineTo (bc.x - 108.0f * u, bc.y + 100.0f * u);
+        tray.lineTo (bc.x + 108.0f * u, bc.y + 100.0f * u);
+        tray.lineTo (bc.x + 108.0f * u, bc.y + 40.0f * u);
+        const PathStrokeType st (34.0f * u * (small ? 1.25f : 1.0f), PathStrokeType::curved, PathStrokeType::rounded);
+        g.setColour (Colours::white);
+        g.strokePath (arrow, st);
+        g.strokePath (tray, st);
+    }
+    return img;
+}
+
+/** Writes a Windows .ico holding PNG-compressed images at the usual sizes (supported since Windows Vista). */
+static bool writeIco (const File& f, const std::function<Image (int)>& render)
+{
+    const int sizes[] = { 16, 20, 24, 32, 40, 48, 64, 128, 256 };
+    std::vector<MemoryBlock> pngs;
+    for (int s : sizes)
+    {
+        MemoryOutputStream ms;
+        PNGImageFormat().writeImageToStream (render (s), ms);
+        pngs.push_back (ms.getMemoryBlock());
+    }
+    f.deleteFile();
+    FileOutputStream os (f);
+    if (! os.openedOk()) return false;
+    const int n = (int) pngs.size();
+    os.writeShort (0); os.writeShort (1); os.writeShort ((short) n);   // ICONDIR
+    int offset = 6 + 16 * n;
+    for (int i = 0; i < n; ++i)
+    {
+        const int s = sizes[i];
+        os.writeByte ((char) (s >= 256 ? 0 : s)); os.writeByte ((char) (s >= 256 ? 0 : s));
+        os.writeByte (0); os.writeByte (0);              // palette, reserved
+        os.writeShort (1); os.writeShort (32);           // planes, bpp
+        os.writeInt ((int) pngs[(size_t) i].getSize());
+        os.writeInt (offset);
+        offset += (int) pngs[(size_t) i].getSize();
+    }
+    for (auto& p : pngs) os.write (p.getData(), p.getSize());
+    return true;
+}
+
 int main (int argc, char** argv)
 {
     ScopedJuceInitialiser_GUI init;
+    if (argc > 3 && String (argv[1]) == "--setup-icon")
+    {
+        // --setup-icon <out.ico> <preview.png>
+        const File ico { String (argv[2]) }, preview { String (argv[3]) };
+        ico.getParentDirectory().createDirectory();
+        if (! writeIco (ico, renderSetupIcon)) { std::puts ("could not write the .ico"); return 1; }
+        preview.deleteFile();
+        FileOutputStream os (preview);
+        Image sheet (Image::ARGB, 256 + 16 + 128 + 16 + 64 + 16 + 48 + 16 + 32 + 16 + 16, 256, true);
+        {
+            Graphics g (sheet);
+            int x = 0;
+            for (int s : { 256, 128, 64, 48, 32, 16 }) { g.drawImageAt (renderSetupIcon (s), x, 256 - s); x += s + 16; }
+        }
+        PNGImageFormat().writeImageToStream (sheet, os);
+        std::printf ("wrote %s and %s\n", ico.getFullPathName().toRawUTF8(), preview.getFullPathName().toRawUTF8());
+        return 0;
+    }
     if (argc > 2 && String (argv[1]) == "--icon")
     {
         const File f { String (argv[2]) };
