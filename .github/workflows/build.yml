@@ -1,4 +1,4 @@
-name: Build Fix Dr
+name: Build MC6400 DSP
 
 on:
   push:
@@ -14,11 +14,11 @@ jobs:
           - os: windows-latest
             name: Windows
             configure: cmake -B build -A x64
-            targets: FixDr_VST3 FixDr_Standalone
+            targets: Mc6400Dsp_VST3
           - os: macos-latest
             name: macOS
             configure: cmake -B build -G Xcode
-            targets: FixDr_VST3 FixDr_AU FixDr_Standalone
+            targets: Mc6400Dsp_VST3 Mc6400Dsp_AU
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -39,9 +39,8 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: Fix-Dr-${{ matrix.name }}
+          name: MC6400-DSP-${{ matrix.name }}
           path: |
-            build/FixDr_artefacts/Release/VST3
-            build/FixDr_artefacts/Release/AU
-            build/FixDr_artefacts/Release/Standalone
+            build/Mc6400Dsp_artefacts/Release/VST3
+            build/Mc6400Dsp_artefacts/Release/AU
           if-no-files-found: error

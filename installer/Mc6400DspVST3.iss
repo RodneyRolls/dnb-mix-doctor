@@ -1,17 +1,17 @@
 ; ---------------------------------------------------------------------------
-;  Fix Dr - VST3-only Windows installer (Inno Setup 6)
-;  Installs just the 64-bit VST3 plugin, no standalone app and no shortcuts.
-;  Build with build_installer.bat (or: ISCC.exe installer\FixDrVST3.iss)
+;  MC6400 DSP - VST3-only Windows installer (Inno Setup 6)
+;  Installs the 64-bit VST3 plugin (there is no standalone app).
+;  Build with build_installer.bat (or: ISCC.exe installer\Mc6400DspVST3.iss)
 ;  after build_windows.bat has produced the Release VST3.
 ; ---------------------------------------------------------------------------
 
-#define AppName      "Fix Dr"
+#define AppName      "MC6400 DSP"
 #define AppVersion   "1.0.0"
 #define AppPublisher "Mod Con DSP"
-#define Art          "..\build\FixDr_artefacts\Release"
+#define Art          "..\build\Mc6400Dsp_artefacts\Release"
 
 [Setup]
-AppId={{7A3C59E1-0D84-4B62-8F1E-C26B95D4A0F7}
+AppId={{8C5F02B9-E47D-4A31-9D86-71B0F3E2C5A8}
 AppName={#AppName} VST3
 AppVersion={#AppVersion}
 AppVerName={#AppName} VST3 {#AppVersion}
@@ -25,8 +25,8 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
-OutputBaseFilename=Fix Dr VST3 Setup {#AppVersion}
-SetupIconFile=FixDr.ico
+OutputBaseFilename=MC6400 DSP VST3 Setup {#AppVersion}
+SetupIconFile=Mc6400Dsp.ico
 UninstallDisplayIcon={commoncf64}\VST3\{#AppName}.vst3\Plugin.ico
 UninstallDisplayName={#AppName} VST3 {#AppVersion}
 WizardStyle=modern
